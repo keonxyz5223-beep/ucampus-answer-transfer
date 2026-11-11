@@ -1,0 +1,57 @@
+{
+  "course": "新视野大学英语（第四版）视听说教程3",
+  "unit": "Unit 1 Access to success",
+  "rule": "打钩为填空，答案取绿色文字；含 / 时两侧都对，默认填第一个。字母为选择题答案。",
+  "tasks": [
+    {
+      "path": ["Taking in", "Listening to China", "While you listen", "Exercise 1"],
+      "kind": "fill",
+      "answers": ["1945", "his academic career", "1958", "his lifelong passion", "1988", "diving limits", "anniversary celebration", "rejecting the chair", "determination"]
+    },
+    {
+      "path": ["Taking in", "Listening to China", "While you listen", "Exercise 2"],
+      "kind": "choice",
+      "answers": ["A", "B", "A", "B", "A"]
+    },
+    {
+      "path": ["Taking in", "Viewing China", "While you view", "Exercise 1"],
+      "kind": "choice",
+      "answers": ["B", "B", "A"]
+    },
+    {
+      "path": ["Taking in", "Viewing China", "While you view", "Exercise 2"],
+      "kind": "fill",
+      "answers": ["barren land", "generations of workers", "freezing and long", "20 billion"]
+    },
+    {
+      "path": ["Taking in", "Viewing world cultures", "While you view", "Exercise 1"],
+      "kind": "choice",
+      "answers": ["E", "H", "C", "B", "F", "A", "D", "G"]
+    },
+    {
+      "path": ["Taking in", "Viewing world cultures", "While you view", "Exercise 2"],
+      "kind": "fill",
+      "answers": ["90 minutes", "worried", "on the waves", "10 times", "dig in", "focus", "make this challenge", "seven miles", "four months", "outstanding achievement"]
+    },
+    {
+      "path": ["Taking in", "Watching street interviews", "Exercise 2"],
+      "kind": "fill",
+      "answers": ["cup of tea", "feel good", "trying new things"]
+    },
+    {
+      "path": ["Taking in", "Watching street interviews", "Exercise 3"],
+      "kind": "choice",
+      "answers": ["E", "D", "A", "B", "C"]
+    },
+    {
+      "path": ["Taking in", "Watching street interviews", "Exercise 4"],
+      "kind": "choice",
+      "answers": ["B", "A", "C", "C", "O"]
+    },
+    {
+      "path": ["Speaking out", "Group discussion", "Get ideas", "Exercise 2"],
+      "kind": "choice",
+      "answers": ["A", "B", "C", "F", "G", "I", "J", "K"]
+    }
+  ]
+}
