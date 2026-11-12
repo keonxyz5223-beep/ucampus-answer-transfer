@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         U校园 · 我的答案搬运助手
 // @namespace    local.ucampus.answer-transfer
-// @version      0.4.9
+// @version      0.4.10
 // @description  按本人整理的答案填写当前练习，并点击页面上的提交节点。只填已给出的答案。
 // @match        https://uai.unipus.cn/*
 // @match        https://ucontent.unipus.cn/*
@@ -21,7 +21,7 @@
 
 (() => {
   'use strict';
-  const SCRIPT_VERSION = '0.4.9';
+  const SCRIPT_VERSION = '0.4.10';
   const UPDATE_ROUTES = {
     server: 'https://dl.keon5223.xyz/ucampus-answer-transfer.user.js',
     github: 'https://raw.githubusercontent.com/keonxyz5223-beep/ucampus-answer-transfer/main/ucampus-answer-transfer.user.js'
@@ -236,13 +236,24 @@
     if (candidates.length < count) throw new Error('从所选题往后仅有 ' + candidates.length + ' 道未提交且有答案的练习，不够计划的 ' + count + ' 道。');
     return (includeReserve ? candidates : candidates.slice(0, count)).map(task => ({ ...task, path: task.path.slice(), answers: task.answers.slice() }));
   }
+  function isRateLimitNotice(text) {
+    return /^您?的?操作过于频繁[，,]?请休息几分钟后再继续学习吧[！!。.]?$/.test(compactLabel(text));
+  }
+  function createSubmitProtection(until = 0) {
+    return {
+      until: Number.isFinite(until) ? until : 0,
+      trigger(now) { this.until = now + 8 * 60 * 1000; return this.until; },
+      active(now) { return this.until > now; },
+      seconds(now) { return Math.max(0, Math.ceil((this.until - now) / 1000)); }
+    };
+  }
   async function executeTimedPlan(plan, minutes, deps) {
     if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 1440) throw new Error('总分钟数应大于0且不超过1440。');
     const target = deps.targetCount ?? plan.length;
     if (!Number.isInteger(target) || target < 1 || target > plan.length) throw new Error('可用练习不足计划题数。');
     const slot = minutes * 60000 / target;
     if (slot < 1000) throw new Error('平均每道练习至少留1秒。');
-    const start = deps.now();
+    let start = deps.now(), shortened = 0;
     let completed = 0, skipped = 0;
     const check = () => { if (deps.stopped()) throw new Error('定时任务已停止。'); };
     for (let index = 0; index < plan.length && completed < target; index++) {
@@ -264,7 +275,12 @@
       await deps.fill(task); check();
       if (deps.now() > deadline) throw new Error('第 ' + (completed + 1) + ' 道加载或填写超过分配时间，已停止，没有赶时间连交。');
       deps.onPhase?.('waiting');
-      await deps.waitUntil(deadline, task, completed, target); check();
+      const waited = await deps.waitUntil(deadline, task, completed, target); check();
+      if (waited?.early === true) {
+        const saved = Math.max(0, deadline - deps.now());
+        start -= saved; shortened += saved;
+        deps.onScheduleShift?.(shortened, saved);
+      }
       deps.onPhase?.('checking');
       await deps.verify(task); check();
       deps.onPhase?.('submitting');
@@ -1566,7 +1582,7 @@
   }
   // 允许离线验证答案格式，不在 Node 环境启动页面界面。
   if (typeof document === 'undefined') {
-    if (typeof module !== 'undefined') module.exports = { normalize, fingerprint, validateAnswers, compactLabel, suggestTasks, alignedMenuPath, answeredMenuFlags, menuAlignment, nextMenuJump, navigationPath, taskKey, unitCompatible, validateCourseImport, planSequenceMoves, groupCourseTasks, formatTaskAnswers, correctionDetails, accountRecord, accountFromHomeFields, accountFromHomeState, accountFromPlayer, compareVersions, buildAutoPlan, executeTimedPlan, bookName, taskBook, CONFIRMED_BOOKS, COURSE_TASKS };
+    if (typeof module !== 'undefined') module.exports = { normalize, fingerprint, validateAnswers, compactLabel, suggestTasks, alignedMenuPath, answeredMenuFlags, menuAlignment, nextMenuJump, navigationPath, taskKey, unitCompatible, validateCourseImport, planSequenceMoves, groupCourseTasks, formatTaskAnswers, correctionDetails, accountRecord, accountFromHomeFields, accountFromHomeState, accountFromPlayer, compareVersions, isRateLimitNotice, createSubmitProtection, buildAutoPlan, executeTimedPlan, bookName, taskBook, CONFIRMED_BOOKS, COURSE_TASKS };
     return;
   }
   if (document.getElementById('ucampus-transfer-host')) return;
@@ -1596,7 +1612,9 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 #update-banner{padding:10px 14px;background:#fff2dc;border-bottom:1px solid #e8c59a;color:#714634}#update-banner strong{display:block;font-size:12px}#update-banner p{margin:3px 0 7px;font-size:11px}#update-banner div{display:flex;gap:8px}#update-banner button{font-size:11px;padding:5px 10px}#update-now{background:#8d3048;color:#fff;border-color:#8d3048}
 .idle-confirm-option{display:flex;align-items:center;gap:8px;padding:9px 12px;margin-bottom:9px;background:#fffaf5;border:1px solid var(--line);border-radius:10px;cursor:pointer}.idle-confirm-option input{accent-color:#8d3048;width:15px;height:15px;flex-shrink:0}
 #account-banner{margin:0 0 8px;padding:8px 11px;border:1px solid #ead2d5;border-radius:9px;background:#fff8f6;color:#783b4e;font-size:12px;font-weight:650;overflow-wrap:anywhere}.account-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}.account-actions button{font-size:10px;padding:6px 9px;color:#804151;background:#fff7f5}.jump-check-actions{display:grid;grid-template-columns:1fr 1fr 70px;gap:6px;margin-top:9px}.jump-check-actions button{padding:8px 4px;font-size:11px}.jump-check-actions #jump-check-stop{color:#ad5263;background:#fff4f5}#jump-check-results{max-height:185px;overflow:auto;margin-top:9px;padding:8px 10px;background:#fff8f5;border:1px solid #eedfe0;border-radius:9px;font-size:11px;line-height:1.7}#jump-check-results:empty{display:none}#submit-top{background:#8d3048;color:#fff;border-color:#8d3048;padding:7px 8px;font-size:10px;white-space:nowrap}.task-line{display:flex;align-items:stretch;gap:3px;margin:4px}.task-line .task-row{flex:1;width:auto;margin:0}.task-manual{flex:0 0 71px;font-size:10px;padding:5px 4px;white-space:normal}.task-row.unreachable:not(.current){background:#eaf5ff;border-color:#b8dafa;color:#28628f}.task-row.unreachable.current{box-shadow:inset 3px 0 #4388c2}.dot.unreachable{background:#b8dafa}
+#submit-protection{position:fixed;width:240px;max-width:calc(100vw - 24px);padding:14px;background:#fff4e5;border:1px solid #d59a60;border-radius:14px;box-shadow:0 6px 24px #49202d33;z-index:2147483647;color:#79384d}#submit-protection strong{font-size:14px}#submit-protection-clock{display:block;font-size:30px;font-variant-numeric:tabular-nums;color:#8d3048}#submit-protection p{font-size:11px;margin:5px 0}#submit-protection[hidden]{display:none}
 </style>
+<aside id="submit-protection" hidden role="status" aria-label="提交保护倒计时"><strong>提交过快 · 休息一会</strong><b id="submit-protection-clock">08:00</b><p>提交过于快了，休息会再提交。</p><p>再次出现网页频繁操作提示时，重新计时8分钟。定时任务已停止，不会自动续跑。</p></aside>
 <section aria-label="U校园答案搬运助手">
 <header><div class="brand-mark">U</div><div class="brand-copy"><span>✿ 胡桃的学习手记 · U校园</span><strong>答案搬运助手 <b class="version">v${SCRIPT_VERSION}</b></strong></div><button id="submit-top" title="填写并提交所选练习">填写并提交</button><button id="toggle" title="收起或展开助手">收起</button></header>
 <div id="update-banner" role="status" hidden><strong id="update-title">发现新版本</strong><p>阿里云已发布新版脚本。更新由 Tampermonkey 确认安装。</p><div><button id="update-now">前往更新</button><button id="update-later">稍后</button></div></div>
@@ -1620,7 +1638,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 <div class="window-links"><button id="show-timer" class="timer-link">定时答题窗口 ↗</button><button id="toggle-log" class="timer-link">关闭日志窗口</button></div>
 <label class="update-route">更新线路<select id="update-route"><option value="server">阿里云 dl.keon5223.xyz</option><option value="github">GitHub</option></select></label>
 <button id="check-update" class="timer-link">检查所选线路</button>
-<label class="idle-confirm-option"><input id="auto-idle-confirm" type="checkbox">长时间未操作时自动点「确定」</label>
+<label class="idle-confirm-option"><input id="auto-idle-confirm" type="checkbox">手动答题时，长时间未操作自动点「确定」</label><small>定时答题会自动确认指定的闲置提示，填完并核对当前题后提前提交，跳过的等待时间不补回。</small>
 <details class="card" id="import-panel"><summary>导入答案与页面工具</summary><small>选择答案 JSON 自动导入，或粘贴后点导入。</small><input id="file" type="file" accept="application/json,.json"><textarea id="answers" placeholder="在此粘贴完整答案 JSON"></textarea><div class="import-actions"><button id="import-course">导入整单元答案</button><button id="preview">核对答案</button><button id="fill" disabled>填写本页答案</button></div><small>导入只保存；同一本书、同一道题的答案会更新。</small>
 <details class="advanced-tools"><summary>页面资料与模板</summary><div class="import-actions"><button id="scan">采集当前练习</button><button id="export">导出页面资料</button><button id="template">导出答案模板</button></div></details></details>
 <div class="status-card"><div class="status-label">运行状态</div><pre id="status" role="status" aria-live="polite">准备就绪。选择一道练习开始。</pre></div><div class="panel-foot">拖动顶部标题可移动窗口</div>
@@ -1690,7 +1708,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   }
   function updateTimerMetrics() {
     const state = autoState || {}, now = state.finishedAt ?? Date.now();
-    const elapsed = Number.isFinite(state.startedAt) ? (now - state.startedAt) / 1000 : 0;
+    const elapsed = Number.isFinite(state.startedAt) ? (now - state.startedAt + (state.shortenedMs || 0)) / 1000 : 0;
     const phaseNames = { jumping: '正在跳转', filling: '正在填写', waiting: '等待提交', checking: '核对页面', submitting: '正在提交', stopping: '正在停止', completed: '已完成', stopped: '已停止', failed: '异常停止' };
     let remaining = '—';
     if (state.running && Number.isFinite(state.deadline)) remaining = state.phase === 'submitting' ? '提交中' : state.phase === 'checking' ? '核对中' : state.phase === 'stopping' ? '停止中' : Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000)) + ' 秒';
@@ -1714,6 +1732,99 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     if (autoState?.running) timerStatus(text);
     ui('status').setAttribute('data-state', /失败|未完成|找不到|未找到|卡在|超过|无法|不够/.test(text) ? 'error' : /完成|已提交|已导入|已合并/.test(text) ? 'success' : 'info');
   };
+  const SUBMIT_PROTECTION_KEY = 'ucampus-submit-protection-until/v1';
+  const SUBMIT_PROTECTION_REASON = '提交单个题相隔时间过短，已触发保护';
+  const submitProtection = createSubmitProtection(Number(sharedRead(SUBMIT_PROTECTION_KEY, 0)));
+  let visibleRateNotices = new Set();
+  const protectedDocuments = new WeakSet();
+  function protectionActive() {
+    const saved = Number(sharedRead(SUBMIT_PROTECTION_KEY, 0));
+    if (Number.isFinite(saved)) submitProtection.until = Math.max(submitProtection.until, saved);
+    return submitProtection.active(Date.now());
+  }
+  function stopForSubmitProtection() {
+    if (!autoState?.running || autoState.stopReason === SUBMIT_PROTECTION_REASON) return;
+    autoState.cancelled = true; autoState.stopReason = SUBMIT_PROTECTION_REASON;
+    autoState.phase = 'stopping'; updateTimerMetrics();
+    timerStatus(SUBMIT_PROTECTION_REASON + '。定时答题已停止，8分钟后也不会自动继续。');
+    status(SUBMIT_PROTECTION_REASON + '。定时答题已停止。');
+  }
+  function refreshProtectionWindow(notice) {
+    const panel = ui('submit-protection'), active = protectionActive();
+    panel.hidden = !active;
+    if (!active) return;
+    stopForSubmitProtection();
+    ui('submit-protection-clock').textContent = formatTimerDuration(submitProtection.seconds(Date.now()));
+    const box = notice?.closest?.('.ant-modal, [role="dialog"], .system-info-modal')?.getBoundingClientRect();
+    const width = Math.min(240, window.innerWidth - 24), height = panel.offsetHeight || 160;
+    let left = box ? box.right + 12 : window.innerWidth - width - 16;
+    if (left + width > window.innerWidth - 12) left = box ? box.left - width - 12 : left;
+    panel.style.left = Math.max(12, Math.min(left, window.innerWidth - width - 12)) + 'px';
+    panel.style.top = Math.max(12, Math.min(box?.top || 80, window.innerHeight - height - 12)) + 'px';
+  }
+  function beginSubmitProtection(notice) {
+    submitProtection.trigger(Date.now());
+    try { sharedWrite(SUBMIT_PROTECTION_KEY, submitProtection.until); } catch { /* 本页仍执行保护 */ }
+    stopForSubmitProtection();
+    appendActivityLog('识别到网页频繁操作提示，提交保护重新计时8分钟。');
+    refreshProtectionWindow(notice);
+  }
+  function scanRateNotices() {
+    const current = new Set();
+    for (const doc of pageDocuments()) {
+      installSubmissionGuard(doc);
+      for (const notice of doc.querySelectorAll('.ant-modal-confirm-content, .system-info-modal, [role="dialog"]')) {
+        if (!visible(notice)) continue;
+        const leaves = [notice, ...notice.querySelectorAll('span, p')];
+        if (!leaves.some(node => isRateLimitNotice(node.textContent || ''))) continue;
+        // 一个提示按最里层内容节点计；同一弹窗常驻不反复重置倒计时。
+        if (notice.querySelector('.ant-modal-confirm-content')) continue;
+        current.add(notice);
+        if (!visibleRateNotices.has(notice)) beginSubmitProtection(notice);
+      }
+    }
+    visibleRateNotices = current;
+    return current.values().next().value;
+  }
+  function assertSubmissionAllowed() {
+    scanRateNotices();
+    if (!protectionActive()) return;
+    refreshProtectionWindow();
+    throw new Error('提交过于快了，休息会再提交。剩余 ' + formatTimerDuration(submitProtection.seconds(Date.now())));
+  }
+  function submissionClick(event) {
+    const path = event.composedPath?.() || [event.target];
+    const ownControl = path.some(node => ['submit-top', 'submit-course', 'submit-only', 'auto-start'].includes(node?.id));
+    const ownUI = path.includes(host);
+    const nativeControl = !ownUI && path.some(node => {
+      if (!node?.getAttribute) return false;
+      const text = compactLabel(node.innerText || node.textContent || node.value || node.getAttribute('aria-label') || '');
+      if (/^(提交|确认提交|确定提交)$/.test(text) || node.type === 'submit') return true;
+      if (!/^(确定|确认|继续)$/.test(text)) return false;
+      const dialog = node.closest('.ant-modal, [role="dialog"], .system-info-modal');
+      return dialog && /提交/.test(dialog.textContent || '');
+    });
+    if (!ownControl && !nativeControl && event.type !== 'submit') return;
+    scanRateNotices();
+    if (!protectionActive()) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    refreshProtectionWindow();
+    const message = '提交过于快了，休息会再提交。剩余 ' + formatTimerDuration(submitProtection.seconds(Date.now()));
+    status(message);
+    if (event.isTrusted) window.alert(message);
+  }
+  function installSubmissionGuard(doc) {
+    if (protectedDocuments.has(doc)) return;
+    protectedDocuments.add(doc);
+    doc.addEventListener('click', submissionClick, true);
+    doc.addEventListener('submit', submissionClick, true);
+    // 在填题中触发保护后，阻止该任务后续的程序点击；用户仍可浏览页面。
+    doc.addEventListener('click', event => {
+      if (!event.isTrusted && autoState?.running && autoState.stopReason === SUBMIT_PROTECTION_REASON && !event.composedPath?.().includes(host)) {
+        event.preventDefault(); event.stopImmediatePropagation();
+      }
+    }, true);
+  }
   const IDLE_CONFIRM_KEY = 'ucampus-idle-confirm-enabled/v1';
   const idleConfirmInput = ui('auto-idle-confirm');
   idleConfirmInput.checked = sharedRead(IDLE_CONFIRM_KEY, false) === true;
@@ -1723,7 +1834,8 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   };
   const confirmedIdleButtons = new WeakSet();
   function confirmIdleNotice() {
-    if (!idleConfirmInput.checked) return;
+    if (!idleConfirmInput.checked && !autoState?.running) return;
+    if (protectionActive()) return;
     for (const button of document.querySelectorAll('button[id^="mask_notice_id_"]')) {
       if (!/^mask_notice_id_\d{13}$/.test(button.id) || confirmedIdleButtons.has(button) || button.disabled ||
           normalize(button.textContent) !== '确定' || !button.getClientRects().length ||
@@ -1733,18 +1845,24 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
       confirmedIdleButtons.add(button);
       button.click();
       appendActivityLog('已自动确认网页的长时间未操作提示。');
+      if (autoState?.running && !autoState.cancelled && autoState.currentTask && ['jumping', 'filling', 'waiting'].includes(autoState.phase)) {
+        autoState.idleSubmitTaskKey = taskKey(autoState.currentTask.path, autoState.currentTask.book);
+        appendActivityLog('定时任务收到闲置提示，当前题填写并核对后提前提交；未等待时间不补回。');
+      }
     }
   }
   if (typeof MutationObserver === 'function') {
     let idleScanTimer;
     const scheduleIdleScan = () => {
-      if (idleScanTimer || !idleConfirmInput.checked) return;
-      idleScanTimer = setTimeout(() => { idleScanTimer = null; confirmIdleNotice(); }, 150);
+      if (idleScanTimer) return;
+      idleScanTimer = setTimeout(() => { idleScanTimer = null; scanRateNotices(); confirmIdleNotice(); }, 150);
     };
     new MutationObserver(scheduleIdleScan).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
     idleConfirmInput.addEventListener('change', scheduleIdleScan);
   }
-  confirmIdleNotice();
+  // 等界面及定时状态初始化后扫描，避免初始化期间读取未建立的状态。
+  setTimeout(() => { refreshProtectionWindow(scanRateNotices()); confirmIdleNotice(); }, 0);
+  setInterval(() => { refreshProtectionWindow(scanRateNotices()); }, 1000);
   const ROUTE_KEY = 'ucampus-learned-routes/v1';
   let taskTreeSignature = '';
   let lastTreeFocus = '';
@@ -2230,6 +2348,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     return docs.some(doc => exactTextNodes(doc, '答题小结').length > 0);
   }
   async function clickSubmit(report = () => {}, shouldStop = () => false) {
+    assertSubmissionAllowed();
     const docs = pageDocuments();
     if (submissionComplete(docs)) throw new Error('页面已经是答题小结，未重复提交。');
     report('答案已填写，等待网页提交按钮可用……');
@@ -2243,6 +2362,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
       const buttons = submitButtons(docs);
       throw new Error(buttons.length > 1 ? '页面有多个提交入口，没有盲点。' : buttons.length ? '网页提交按钮仍不可用，答案已保留。' : '答案已填写，但没有找到网页提交按钮。');
     }
+    assertSubmissionAllowed();
     if (shouldStop()) throw new Error('定时任务已停止，未点击提交。');
     button.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     button.click();
@@ -2251,6 +2371,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     const started = Date.now();
     let confirmed = 0;
     while (Date.now() - started < 15000) {
+      assertSubmissionAllowed();
       if (shouldStop()) throw new Error('定时任务已停止；已发出的提交请求无法撤回。');
       if (submissionComplete(docs)) return '已提交，页面已显示答题小结。';
       const dialogs = docs.flatMap(doc => [...doc.querySelectorAll('.ant-modal, [role="dialog"], .system-info-modal')].filter(visible));
@@ -2263,6 +2384,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
         if (++confirmed > 3) throw new Error('确认框重复出现，停止重试。');
         acted.set(dialog, text);
         if (shouldStop()) throw new Error('定时任务已停止，未继续确认。');
+        assertSubmissionAllowed();
         confirms[0].click();
         report('已处理第 ' + confirmed + ' 个提交确认，等待答题小结……');
       }
@@ -3206,6 +3328,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     if (hits.length !== 1 || taskKey(hits[0].path, hits[0].book) !== taskKey(task.path, task.book)) throw new Error('网页已离开计划中的练习，已停止，没有提交其他题。');
   }
   async function startTimedTask() {
+    assertSubmissionAllowed();
     const expectedAccountKey = await requireAccountIdentity();
     if (!catalogMenus().length || isShelfPage()) throw new Error('请先打开具体课本练习页，再启动定时任务。');
     const selected = selectedTask();
@@ -3216,7 +3339,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     const targetCount = Number(ui('auto-count').value);
     const minutes = Number(ui('auto-minutes').value);
     if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 1440 || minutes * 60000 / targetCount < 1000) throw new Error('分钟数应大于0且不超过1440，平均每道至少1秒。');
-    autoState = { running: true, cancelled: false, accountKey: expectedAccountKey, skipped: [], startedAt: Date.now(), completed: 0, targetCount, phase: 'jumping' };
+    autoState = { running: true, cancelled: false, accountKey: expectedAccountKey, skipped: [], startedAt: Date.now(), completed: 0, targetCount, phase: 'jumping', shortenedMs: 0, idleSubmitTaskKey: '' };
     autoState.clockTimer = setInterval(updateTimerMetrics, 1000);
     updateTimerMetrics();
     ui('auto-skipped').textContent = failedKeys.length ? '已按整本教材共享检查结果预先跳过 ' + failedKeys.length + ' 道跳转未找到的练习（不计完成）。' : '';
@@ -3226,9 +3349,10 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     try {
       const completed = await executeTimedPlan(plan, minutes, {
         targetCount, skipJumpFailures: true,
-        onTask: (task, completed, target, deadline) => { autoState.currentTask = task; autoState.deadline = deadline; autoState.completed = completed; updateTimerMetrics(); },
+        onTask: (task, completed, target, deadline) => { autoState.idleSubmitTaskKey = ''; autoState.currentTask = task; autoState.deadline = deadline; autoState.completed = completed; updateTimerMetrics(); },
         onPhase: phase => { autoState.phase = phase; updateTimerMetrics(); },
         onProgress: completed => { autoState.completed = completed; updateTimerMetrics(); },
+        onScheduleShift: (total, saved) => { autoState.shortenedMs = total; autoState.idleSubmitTaskKey = ''; appendActivityLog('闲置提示提前提交，计划跳过等待 ' + Math.ceil(saved / 1000) + ' 秒。'); updateTimerMetrics(); },
         onSkip: (task, error) => {
           autoState.skipped.push(task.path.join(' / ') + '：' + (error?.message || String(error)));
           saveNavigationResult(task, error);
@@ -3241,6 +3365,8 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
         waitUntil: async (deadline, task, index, total) => {
           while (Date.now() < deadline) {
             if (autoState.cancelled) throw new Error('定时任务已停止。');
+            assertSubmissionAllowed();
+            if (autoState.idleSubmitTaskKey === taskKey(task.path, task.book)) return { early: true };
             status('第 ' + (index + 1) + '/' + total + ' 道已填写，' + Math.ceil((deadline - Date.now()) / 1000) + ' 秒后提交。');
             await new Promise(resolve => setTimeout(resolve, Math.min(1000, Math.max(1, deadline - Date.now()))));
           }
@@ -3254,7 +3380,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
       autoState.phase = 'completed';
       status('定时任务完成，已确认提交 ' + completed + '/' + targetCount + ' 道练习；跳过 ' + autoState.skipped.length + ' 道跳转失败的练习，详情见跳过记录。');
     } catch (error) {
-      if (autoState.cancelled) { autoState.phase = 'stopped'; status('定时任务已停止，不再填写或发起提交。已发出的请求无法撤回，请以网页结果为准。'); }
+      if (autoState.cancelled) { autoState.phase = 'stopped'; const message = autoState.stopReason ? autoState.stopReason + '。定时任务已停止，冷却结束后不会自动继续。' : '定时任务已停止，不再填写或发起提交。已发出的请求无法撤回，请以网页结果为准。'; status(message); timerStatus(message); }
       else { autoState.phase = 'failed'; timerStatus('定时任务未完成：' + (error.message || String(error))); throw error; }
     } finally {
       if (typeof clearInterval === 'function' && autoState.clockTimer !== undefined) clearInterval(autoState.clockTimer);
@@ -3392,6 +3518,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   }, jumpErrorOptions);
   ui('fill-course').onclick = run(async () => { status(await fillCourseTask(selectedTask())); });
   ui('submit-course').onclick = run(async () => {
+    assertSubmissionAllowed();
     const accountKey = await requireAccountIdentity();
     const task = selectedTask();
     const filled = await fillCourseTask(task);
@@ -3404,6 +3531,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   ui('submit-top').onclick = () => ui('submit-course').click();
   ui('submit-only').onclick = run(async () => {
     // 只提交网页现有答案；不调用填写函数，也不依赖列表当前选项。
+    assertSubmissionAllowed();
     const accountKey = await requireAccountIdentity();
     const hits = currentTaskHits();
     const task = hits.length === 1 ? hits[0] : null;
