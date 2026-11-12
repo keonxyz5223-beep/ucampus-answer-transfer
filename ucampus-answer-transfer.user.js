@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         U校园 · 我的答案搬运助手
 // @namespace    local.ucampus.answer-transfer
-// @version      0.4.0
+// @version      0.4.1
 // @description  按本人整理的答案填写当前练习，并点击页面上的提交节点。只填已给出的答案。
 // @match        https://uai.unipus.cn/*
 // @match        https://ucontent.unipus.cn/*
@@ -21,7 +21,7 @@
 
 (() => {
   'use strict';
-  const SCRIPT_VERSION = '0.4.0';
+  const SCRIPT_VERSION = '0.4.1';
   const UPDATE_ROUTES = {
     server: 'https://dl.keon5223.xyz/ucampus-answer-transfer.user.js',
     github: 'https://raw.githubusercontent.com/keonxyz5223-beep/ucampus-answer-transfer/main/ucampus-answer-transfer.user.js'
@@ -789,6 +789,564 @@
       "C",
       "B",
       "D"
+    ]
+  }
+]);
+  // 用户截图确认的 Unit 5、6；仍优先使用个人导入的答案。分组题待题面核实。
+  COURSE_TASKS.push(...[
+  {
+    "path": [
+      "Unit 5",
+      "Taking in",
+      "Listening to China",
+      "While you listen",
+      "Exercise 1"
+    ],
+    "kind": "choice",
+    "answers": [
+      "B",
+      "D",
+      "E",
+      "C",
+      "F",
+      "A"
+    ]
+  },
+  {
+    "path": [
+      "Unit 5",
+      "Taking in",
+      "Listening to China",
+      "While you listen",
+      "Exercise 2"
+    ],
+    "kind": "choice",
+    "answers": [
+      "B",
+      "A",
+      "A",
+      "A",
+      "B",
+      "B"
+    ]
+  },
+  {
+    "path": [
+      "Unit 5",
+      "Taking in",
+      "Listening to China",
+      "While you listen",
+      "Exercise 3"
+    ],
+    "kind": "fill",
+    "answers": [
+      "ticking away",
+      "antique clock restoration",
+      "work on",
+      "repairing them",
+      "put the spotlight",
+      "occupation"
+    ]
+  },
+  {
+    "path": [
+      "Unit 5",
+      "Taking in",
+      "Viewing China",
+      "While you view",
+      "Exercise 1"
+    ],
+    "kind": "choice",
+    "answers": [
+      "C",
+      "D",
+      "A"
+    ]
+  },
+  {
+    "path": [
+      "Unit 5",
+      "Taking in",
+      "Viewing China",
+      "While you view",
+      "Exercise 2"
+    ],
+    "kind": "fill",
+    "answers": [
+      "more than six decades",
+      "natural forests",
+      "forestry engineer",
+      "endangered species",
+      "the protection of forest resources"
+    ]
+  },
+  {
+    "path": [
+      "Unit 5",
+      "Taking in",
+      "Viewing world cultures",
+      "While you view",
+      "Exercise 1"
+    ],
+    "kind": "choice",
+    "answers": [
+      "B",
+      "C",
+      "D"
+    ]
+  },
+  {
+    "path": [
+      "Unit 5",
+      "Taking in",
+      "Viewing world cultures",
+      "While you view",
+      "Exercise 2"
+    ],
+    "kind": "fill",
+    "answers": [
+      "break down",
+      "very confused",
+      "the opportunity",
+      "negative cycle",
+      "the other side",
+      "exit homelessness"
+    ]
+  },
+  {
+    "path": [
+      "Unit 5",
+      "Taking in",
+      "Watching street interviews",
+      "Exercise 2"
+    ],
+    "kind": "fill",
+    "answers": [
+      "producer",
+      "dream job",
+      "a successful band"
+    ]
+  },
+  {
+    "path": [
+      "Unit 5",
+      "Taking in",
+      "Watching street interviews",
+      "Exercise 3"
+    ],
+    "kind": "choice",
+    "answers": [
+      "A",
+      "C",
+      "D",
+      "G",
+      "J"
+    ]
+  },
+  {
+    "path": [
+      "Unit 5",
+      "Taking in",
+      "Watching street interviews",
+      "Exercise 4"
+    ],
+    "kind": "choice",
+    "answers": [
+      "E",
+      "B",
+      "A",
+      "D",
+      "C"
+    ]
+  },
+  {
+    "path": [
+      "Unit 5",
+      "Taking in",
+      "Watching street interviews",
+      "Exercise 5"
+    ],
+    "kind": "fill",
+    "answers": [
+      "footballer",
+      "professional",
+      "on my own",
+      "design houses",
+      "teach",
+      "doctor",
+      "starting a band"
+    ]
+  },
+  {
+    "path": [
+      "Unit 5",
+      "Speaking out",
+      "Group discussion",
+      "Get ideas",
+      "Exercise 2"
+    ],
+    "kind": "fill",
+    "answers": [
+      "takes a shower",
+      "switches on the lights",
+      "coming in",
+      "seated at the table",
+      "have a little nap",
+      "snack time",
+      "take the children home"
+    ]
+  },
+  {
+    "path": [
+      "Unit 5",
+      "Further listening",
+      "Conversation"
+    ],
+    "kind": "choice",
+    "answers": [
+      "B",
+      "B",
+      "D",
+      "C"
+    ]
+  },
+  {
+    "path": [
+      "Unit 5",
+      "Further listening",
+      "Passage"
+    ],
+    "kind": "choice",
+    "answers": [
+      "A",
+      "D",
+      "C"
+    ]
+  },
+  {
+    "path": [
+      "Unit 5",
+      "Further listening",
+      "Lecture 1"
+    ],
+    "kind": "choice",
+    "answers": [
+      "C",
+      "C",
+      "D",
+      "D"
+    ]
+  },
+  {
+    "path": [
+      "Unit 5",
+      "Further listening",
+      "Lecture 2"
+    ],
+    "kind": "choice",
+    "answers": [
+      "B",
+      "D",
+      "B"
+    ]
+  },
+  {
+    "path": [
+      "Unit 5",
+      "Unit test",
+      "Conversation"
+    ],
+    "kind": "choice",
+    "answers": [
+      "B",
+      "C",
+      "D",
+      "B"
+    ]
+  },
+  {
+    "path": [
+      "Unit 5",
+      "Unit test",
+      "Passage"
+    ],
+    "kind": "choice",
+    "answers": [
+      "A",
+      "C",
+      "D"
+    ]
+  },
+  {
+    "path": [
+      "Unit 5",
+      "Unit test",
+      "Lecture"
+    ],
+    "kind": "choice",
+    "answers": [
+      "D",
+      "B",
+      "C",
+      "B"
+    ]
+  },
+  {
+    "path": [
+      "Unit 6",
+      "Taking in",
+      "Listening to China",
+      "While you listen",
+      "Exercise 1"
+    ],
+    "kind": "fill",
+    "answers": [
+      "basic necessities",
+      "well-managed nationwide database",
+      "multiple strategies",
+      "providing social assistance",
+      "sustainability",
+      "employment opportunities"
+    ]
+  },
+  {
+    "path": [
+      "Unit 6",
+      "Taking in",
+      "Listening to China",
+      "While you listen",
+      "Exercise 2"
+    ],
+    "kind": "choice",
+    "answers": [
+      "A",
+      "C",
+      "D",
+      "E"
+    ]
+  },
+  {
+    "path": [
+      "Unit 6",
+      "Taking in",
+      "Viewing China",
+      "While you view",
+      "Exercise 1"
+    ],
+    "kind": "choice",
+    "answers": [
+      "C",
+      "A"
+    ]
+  },
+  {
+    "path": [
+      "Unit 6",
+      "Taking in",
+      "Viewing China",
+      "While you view",
+      "Exercise 2"
+    ],
+    "kind": "choice",
+    "answers": [
+      "B",
+      "B",
+      "A",
+      "A"
+    ]
+  },
+  {
+    "path": [
+      "Unit 6",
+      "Taking in",
+      "Viewing world cultures",
+      "While you view",
+      "Exercise 1"
+    ],
+    "kind": "choice",
+    "answers": [
+      "D",
+      "B",
+      "E",
+      "C",
+      "A"
+    ]
+  },
+  {
+    "path": [
+      "Unit 6",
+      "Taking in",
+      "Viewing world cultures",
+      "While you view",
+      "Exercise 2"
+    ],
+    "kind": "choice",
+    "answers": [
+      "A",
+      "B",
+      "B",
+      "B",
+      "A"
+    ]
+  },
+  {
+    "path": [
+      "Unit 6",
+      "Taking in",
+      "Watching street interviews",
+      "Exercise 2"
+    ],
+    "kind": "fill",
+    "answers": [
+      "fixing problems",
+      "sort out",
+      "solving problems"
+    ]
+  },
+  {
+    "path": [
+      "Unit 6",
+      "Taking in",
+      "Watching street interviews",
+      "Exercise 3"
+    ],
+    "kind": "fill",
+    "answers": [
+      "Yes",
+      "Yes",
+      "Yes",
+      "Yes",
+      "With some things",
+      "Most of the time"
+    ]
+  },
+  {
+    "path": [
+      "Unit 6",
+      "Taking in",
+      "Watching street interviews",
+      "Exercise 4"
+    ],
+    "kind": "choice",
+    "answers": [
+      "E",
+      "A",
+      "C",
+      "B",
+      "D",
+      "C",
+      "A",
+      "B"
+    ]
+  },
+  {
+    "path": [
+      "Unit 6",
+      "Speaking out",
+      "Group discussion",
+      "Get ideas",
+      "Exercise 2"
+    ],
+    "kind": "choice",
+    "answers": [
+      "A",
+      "D",
+      "G"
+    ]
+  },
+  {
+    "path": [
+      "Unit 6",
+      "Further listening",
+      "Conversation"
+    ],
+    "kind": "choice",
+    "answers": [
+      "A",
+      "B",
+      "C",
+      "D"
+    ]
+  },
+  {
+    "path": [
+      "Unit 6",
+      "Further listening",
+      "Passage"
+    ],
+    "kind": "choice",
+    "answers": [
+      "D",
+      "C",
+      "D",
+      "B"
+    ]
+  },
+  {
+    "path": [
+      "Unit 6",
+      "Further listening",
+      "Lecture 1"
+    ],
+    "kind": "choice",
+    "answers": [
+      "C",
+      "C",
+      "B"
+    ]
+  },
+  {
+    "path": [
+      "Unit 6",
+      "Further listening",
+      "Lecture 2"
+    ],
+    "kind": "choice",
+    "answers": [
+      "D",
+      "C",
+      "A",
+      "B"
+    ]
+  },
+  {
+    "path": [
+      "Unit 6",
+      "Unit test",
+      "Conversation"
+    ],
+    "kind": "choice",
+    "answers": [
+      "A",
+      "B",
+      "B",
+      "C"
+    ]
+  },
+  {
+    "path": [
+      "Unit 6",
+      "Unit test",
+      "Passage"
+    ],
+    "kind": "choice",
+    "answers": [
+      "C",
+      "B",
+      "C"
+    ]
+  },
+  {
+    "path": [
+      "Unit 6",
+      "Unit test",
+      "Lecture"
+    ],
+    "kind": "choice",
+    "answers": [
+      "C",
+      "A",
+      "C"
     ]
   }
 ]);
@@ -2333,7 +2891,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   }
   function updateDataNote(done) {
     const matched = COURSE_TASKS.filter(task => done.has(taskKey(task.path, task.book))).length;
-    const text = '本地已确认提交：' + matched + '道；教程3已收录Unit 1—4。';
+    const text = '本地已确认提交：' + matched + '道；教程3已收录Unit 1—6（部分分组题待核实）。';
     if (ui('data-note').textContent !== text) ui('data-note').textContent = text;
     return matched;
   }
