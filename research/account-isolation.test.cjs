@@ -1,5 +1,8 @@
 const assert = require('node:assert/strict');
-const { accountRecord, accountFromHomeFields, accountFromHomeState, accountFromPlayer } = require('../ucampus-answer-transfer.user.js');
+const { accountRecord, accountFromHomeFields, accountFromHomeState, accountFromPlayer, compareVersions } = require('../ucampus-answer-transfer.user.js');
+assert.ok(compareVersions('0.4.9', '0.4.5') > 0);
+assert.ok(compareVersions('0.4.9', '0.4.9-test.1') > 0, '正式版高于同版本测试版');
+assert.ok(compareVersions('0.4.5', '0.4.9-test.1') < 0, '旧下载站不能误报为新版本');
 const first = accountFromHomeFields('甲大学', '学号：2026000001', { code: '2026000001', userId: 71, schId: 12 });
 const second = accountFromHomeFields('甲大学', '学号：2026000002', { code: '2026000002', userId: 72, schId: 12 });
 const otherSchool = accountFromHomeFields('乙大学', '学号：2026000001');
@@ -20,4 +23,10 @@ assert.notEqual(accountFromPlayer({ code: '2026000001', school: 15, user_id: 88 
 assert.notEqual(accountFromPlayer({ user_id: 'another-88' }, first).key, first.key, '学号缺失时只用独立账号编号隔离');
 assert.equal(accountFromPlayer({ code: '2026000001' }, first), null, '只凭学号不能猜测学校');
 assert.equal(accountRecord('', '2026000001'), null);
+const playerOnly = { user_id: 18265066, school: 12 };
+const linked = accountRecord('甲大学', '2026000001', { appUserId: 18265066, schId: 12 });
+assert.equal(accountFromPlayer(playerOnly, null, linked).key, first.key, '手动绑定同一课本编号后恢复学校和学号记录区');
+assert.notEqual(accountFromPlayer({ user_id: 18265067, school: 12 }, null, linked).key, first.key, '另一个课本编号不能沿用绑定');
+assert.notEqual(accountFromPlayer({ user_id: 18265066, school: 13 }, null, linked).key, first.key, '另一学校编号不能沿用绑定');
+assert.notEqual(accountFromPlayer({ user_id: 18265066, school: 12, code: '2026000002' }, null, linked).key, first.key, '课本学号冲突时不能沿用绑定');
 console.log('账号标识隔离与跨页身份校验通过。');

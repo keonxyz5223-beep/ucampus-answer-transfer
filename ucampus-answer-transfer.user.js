@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         U校园 · 我的答案搬运助手
 // @namespace    local.ucampus.answer-transfer
-// @version      0.4.8
+// @version      0.4.9
 // @description  按本人整理的答案填写当前练习，并点击页面上的提交节点。只填已给出的答案。
 // @match        https://uai.unipus.cn/*
 // @match        https://ucontent.unipus.cn/*
@@ -21,7 +21,7 @@
 
 (() => {
   'use strict';
-  const SCRIPT_VERSION = '0.4.8';
+  const SCRIPT_VERSION = '0.4.9';
   const UPDATE_ROUTES = {
     server: 'https://dl.keon5223.xyz/ucampus-answer-transfer.user.js',
     github: 'https://raw.githubusercontent.com/keonxyz5223-beep/ucampus-answer-transfer/main/ucampus-answer-transfer.user.js'
@@ -96,7 +96,7 @@
   function accountFromHomeState(state) {
     return state?.userId ? accountRecord(state.schName, state.code, { appUserId: state.userId, schId: state.schId }) : null;
   }
-  function accountFromPlayer(payload, portal) {
+  function accountFromPlayer(payload, portal, binding = null) {
     const candidates = [payload?.value?.userInfo, payload?.data?.userInfo, payload?.rt?.userInfo, payload?.value?.user,
       payload?.data?.user, payload?.rt?.user, payload?.value, payload?.data, payload?.rt, payload?.user, payload];
     const user = candidates.find(item => item && typeof item === 'object' &&
@@ -107,6 +107,12 @@
     const userId = user.appUserId ?? user.user_id ?? user.userId ?? user.open_id ?? user.openId ?? user.id;
     const schId = user.schId ?? user.school ?? user.user_school_id;
     const school = user.schName || user.schoolName || user.school_name || (typeof user.school === 'string' && !/^\d+$/.test(user.school) ? user.school : '');
+    if (binding && userId && String(userId) === String(binding.appUserId) &&
+        String(schId || '') === String(binding.schId || '') &&
+        (!student || student === binding.student) && (!school || compactLabel(school) === compactLabel(binding.school))) {
+      const linked = accountRecord(binding.school, binding.student, { appUserId: userId, schId });
+      if (linked) return linked;
+    }
     if (portal?.appUserId && userId && String(userId) === portal.appUserId &&
         (!portal.schId || !schId || String(schId) === portal.schId) && (!student || student === portal.student)) return portal;
     if (portal?.appUserId && userId && portal.student === normalize(student) && portal.appUserId !== String(userId) && /^[A-Za-z0-9_-]{1,80}$/.test(String(userId))) {
@@ -150,7 +156,8 @@
     const hasShared = usableStoredValue(key, value), hasLocal = usableStoredValue(key, local);
     if (!hasShared && !hasLocal) return fallback;
     let merged = hasShared ? value : local;
-    if (hasShared && hasLocal && (key === 'ucampus-submitted-tasks' || key.startsWith('ucampus-submitted-tasks/v2/'))) merged = [...new Set([...value, ...local])];
+    if (hasShared && hasLocal && key === 'ucampus-submitted-tasks') merged = [...new Set([...value, ...local])];
+    // 分账号记录以扩展存储为准；否则其他域名旧缓存会把已撤回的标记重新合并进来。
     if (hasShared && hasLocal && key === 'ucampus-imported-course-tasks/v1') {
       // 根course也属于教材身份，不能在合并跨书答案时丢掉。
       const tasks = new Map();
@@ -1559,7 +1566,7 @@
   }
   // 允许离线验证答案格式，不在 Node 环境启动页面界面。
   if (typeof document === 'undefined') {
-    if (typeof module !== 'undefined') module.exports = { normalize, fingerprint, validateAnswers, compactLabel, suggestTasks, alignedMenuPath, answeredMenuFlags, menuAlignment, nextMenuJump, navigationPath, taskKey, unitCompatible, validateCourseImport, planSequenceMoves, groupCourseTasks, formatTaskAnswers, correctionDetails, accountRecord, accountFromHomeFields, accountFromHomeState, accountFromPlayer, buildAutoPlan, executeTimedPlan, bookName, taskBook, CONFIRMED_BOOKS, COURSE_TASKS };
+    if (typeof module !== 'undefined') module.exports = { normalize, fingerprint, validateAnswers, compactLabel, suggestTasks, alignedMenuPath, answeredMenuFlags, menuAlignment, nextMenuJump, navigationPath, taskKey, unitCompatible, validateCourseImport, planSequenceMoves, groupCourseTasks, formatTaskAnswers, correctionDetails, accountRecord, accountFromHomeFields, accountFromHomeState, accountFromPlayer, compareVersions, buildAutoPlan, executeTimedPlan, bookName, taskBook, CONFIRMED_BOOKS, COURSE_TASKS };
     return;
   }
   if (document.getElementById('ucampus-transfer-host')) return;
@@ -1588,10 +1595,10 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 :host{--accent:#8d3048;--line:#eadce0;--muted:#917982;color:#473640}section{background:#fcf6f4;border-color:#e7cbd0;box-shadow:0 20px 65px #49202d28,0 3px 12px #49202d12}header{background:linear-gradient(105deg,#fff9f6 0%,#f8e8e9 72%,#efd5d6 100%);border-bottom:1px solid #e7cbd0}.brand-mark{position:relative;background:linear-gradient(140deg,#7d253d,#aa4351);box-shadow:0 5px 12px #70243d40;color:#ffe9bd}.brand-mark::after{content:'✿';position:absolute;right:-6px;top:-8px;color:#d9a160;font-size:16px;text-shadow:0 1px 2px #fff}.brand-copy strong{color:#643044}.brand-copy span,.caption{color:#9b6975}.current-banner{background:#fff9f6;border-color:#ead6d7}#current-task,#timer-summary{background:#faeceb;color:#79384d}.card{border-color:#eedfe0;background:#fffcfa}.card-heading strong{color:#76394d}.task-row.current{border-color:#af6875;background:#faeeed;color:#7c3448;box-shadow:inset 3px 0 #9a4257}.dot.current{background:#9a4257}.timer-link{background:#faedec;color:#833d50;border-color:#e9cbcf}.timer-mark{background:#f7e6e4;color:#92445b}#submit-course,#auto-start{background:#8d3048;border-color:#8d3048;box-shadow:0 4px 10px #8d304830}#submit-course:hover:not(:disabled),#auto-start:hover:not(:disabled){background:#75253d;border-color:#75253d}#fill-course{color:#833e52;background:#fff5f3;border-color:#efd6da}.timer-stat strong,#timer-phase{color:#8d3048}#log-list{background:#fffaf8;color:#674e58;border-color:#eddce0}#log-export{color:#81394c;background:#fff5ee;border-color:#e8d1c7}button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline-color:#a0486266}.panel-foot::before{content:'✿  ';color:#b96b79}
 #update-banner{padding:10px 14px;background:#fff2dc;border-bottom:1px solid #e8c59a;color:#714634}#update-banner strong{display:block;font-size:12px}#update-banner p{margin:3px 0 7px;font-size:11px}#update-banner div{display:flex;gap:8px}#update-banner button{font-size:11px;padding:5px 10px}#update-now{background:#8d3048;color:#fff;border-color:#8d3048}
 .idle-confirm-option{display:flex;align-items:center;gap:8px;padding:9px 12px;margin-bottom:9px;background:#fffaf5;border:1px solid var(--line);border-radius:10px;cursor:pointer}.idle-confirm-option input{accent-color:#8d3048;width:15px;height:15px;flex-shrink:0}
-#account-banner{margin:0 0 8px;padding:8px 11px;border:1px solid #ead2d5;border-radius:9px;background:#fff8f6;color:#783b4e;font-size:12px;font-weight:650;overflow-wrap:anywhere}.account-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}.account-actions button{font-size:10px;padding:6px 9px;color:#804151;background:#fff7f5}.jump-check-actions{display:grid;grid-template-columns:1fr 1fr 70px;gap:6px;margin-top:9px}.jump-check-actions button{padding:8px 4px;font-size:11px}.jump-check-actions #jump-check-stop{color:#ad5263;background:#fff4f5}#jump-check-results{max-height:185px;overflow:auto;margin-top:9px;padding:8px 10px;background:#fff8f5;border:1px solid #eedfe0;border-radius:9px;font-size:11px;line-height:1.7}#jump-check-results:empty{display:none}
+#account-banner{margin:0 0 8px;padding:8px 11px;border:1px solid #ead2d5;border-radius:9px;background:#fff8f6;color:#783b4e;font-size:12px;font-weight:650;overflow-wrap:anywhere}.account-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}.account-actions button{font-size:10px;padding:6px 9px;color:#804151;background:#fff7f5}.jump-check-actions{display:grid;grid-template-columns:1fr 1fr 70px;gap:6px;margin-top:9px}.jump-check-actions button{padding:8px 4px;font-size:11px}.jump-check-actions #jump-check-stop{color:#ad5263;background:#fff4f5}#jump-check-results{max-height:185px;overflow:auto;margin-top:9px;padding:8px 10px;background:#fff8f5;border:1px solid #eedfe0;border-radius:9px;font-size:11px;line-height:1.7}#jump-check-results:empty{display:none}#submit-top{background:#8d3048;color:#fff;border-color:#8d3048;padding:7px 8px;font-size:10px;white-space:nowrap}.task-line{display:flex;align-items:stretch;gap:3px;margin:4px}.task-line .task-row{flex:1;width:auto;margin:0}.task-manual{flex:0 0 71px;font-size:10px;padding:5px 4px;white-space:normal}.task-row.unreachable:not(.current){background:#eaf5ff;border-color:#b8dafa;color:#28628f}.task-row.unreachable.current{box-shadow:inset 3px 0 #4388c2}.dot.unreachable{background:#b8dafa}
 </style>
 <section aria-label="U校园答案搬运助手">
-<header><div class="brand-mark">U</div><div class="brand-copy"><span>✿ 胡桃的学习手记 · U校园</span><strong>答案搬运助手 <b class="version">v${SCRIPT_VERSION}</b></strong></div><button id="toggle" title="收起或展开助手">收起</button></header>
+<header><div class="brand-mark">U</div><div class="brand-copy"><span>✿ 胡桃的学习手记 · U校园</span><strong>答案搬运助手 <b class="version">v${SCRIPT_VERSION}</b></strong></div><button id="submit-top" title="填写并提交所选练习">填写并提交</button><button id="toggle" title="收起或展开助手">收起</button></header>
 <div id="update-banner" role="status" hidden><strong id="update-title">发现新版本</strong><p>阿里云已发布新版脚本。更新由 Tampermonkey 确认安装。</p><div><button id="update-now">前往更新</button><button id="update-later">稍后</button></div></div>
 <div class="current-banner"><div id="account-banner" role="status">当前登录账号：正在识别学校和学号…</div><small id="current-task">当前题：识别中</small></div>
 <div id="body">
@@ -1599,12 +1606,12 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 <div class="card-heading"><strong>我的教材</strong><span class="caption">练习目录</span></div>
 <select id="task" hidden aria-hidden="true" tabindex="-1"></select>
 <div class="toolbar"><button id="read-books">读取首页书架</button><button id="sync-records">同步跨页面记录</button></div>
-<small id="data-note"></small><small id="account-note">账号识别中；提交标记暂不显示。</small><div class="account-actions"><button id="refresh-account" type="button">重新核对账号</button><button id="claim-legacy" type="button" disabled>认领旧版提交记录</button></div><small>旧版标绿需认领；「同步跨页面记录」只同步数据，不会自动指定账号。</small><small id="books-note" hidden>无答案的教材显示（0/0）。</small>
+<small id="data-note"></small><small id="account-note">账号识别中；提交标记暂不显示。</small><div class="account-actions"><button id="refresh-account" type="button">重新核对账号</button><button id="bind-account" type="button" hidden>绑定学校和学号</button><button id="claim-legacy" type="button" disabled>认领旧版提交记录</button></div><small>旧版标绿需认领；「同步跨页面记录」只同步数据，不会自动指定账号。</small><small id="books-note" hidden>无答案的教材显示（0/0）。</small>
 <div id="task-tree" aria-label="按教材和单元分类的练习目录"></div>
-<div class="legend"><span><i class="dot pending"></i>有答案 · 未交</span><span><i class="dot done"></i>已提交</span><span><i class="dot current"></i>当前题</span></div>
-<small>单元进度为（已做/已收录），点击练习可跳转。</small>
+<div class="legend"><span><i class="dot pending"></i>有答案 · 未交</span><span><i class="dot done"></i>已提交</span><span><i class="dot current"></i>当前题</span><span><i class="dot unreachable"></i>跳转未找到</span></div>
+<small>单元进度为（已做/已收录）。蓝底是跨账号共享的跳转失败题；列表右侧按钮只改当前账号的本地提交标记，不会向网站提交。</small>
 <div class="jump-check-actions"><button id="jump-check-unit">检查当前单元</button><button id="jump-check-book">检查整本教材</button><button id="jump-check-stop" disabled>停止</button></div>
-<small>逐题打开并核对是否到达目标练习；只跳转，不填写或提交。检查期间请保持课本页打开。</small><pre id="jump-check-results" role="status" aria-live="polite"></pre>
+<small>整本教材只完整检查一次，结果跨账号共享；仅显示未找到的练习。检查期间请保持课本页打开。</small><pre id="jump-check-results" role="status" aria-live="polite"></pre>
 </div>
 <details class="card" id="answer-view" open><summary>所选练习答案 <span class="answer-title">按顺序查看 · 可复制</span></summary><small id="answer-path"></small><textarea id="answer-display" readonly aria-label="所选练习答案"></textarea></details>
 <div class="card"><div class="card-heading"><strong>练习操作</strong><span class="caption">选择后执行</span></div>
@@ -2266,6 +2273,34 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   const SUBMITTED_KEY = 'ucampus-submitted-tasks'; // 0.4.6 及更早版本的待认领记录
   const SUBMITTED_BY_ACCOUNT = 'ucampus-submitted-tasks/v2/';
   const LEGACY_OWNER_KEY = 'ucampus-submitted-legacy-owner/v1';
+  const NAV_CHECK_KEY = 'ucampus-navigation-check/v1'; // 同一脚本的所有账号共享，每本书独立
+  function readNavigationChecks() {
+    const value = sharedRead(NAV_CHECK_KEY, {});
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  }
+  function navigationBookRecord(book = activeBook()) {
+    const entry = readNavigationChecks()[bookName(book)];
+    return entry && typeof entry === 'object' ? entry : {};
+  }
+  function navigationFailures(book = activeBook()) {
+    const value = navigationBookRecord(book).failures;
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  }
+  function saveNavigationResult(task, error) {
+    const book = taskBook(task), checks = readNavigationChecks(), entry = { ...navigationBookRecord(book) };
+    const failures = { ...(entry.failures || {}) }, key = taskKey(task.path, task.book);
+    if (error) failures[key] = { reason: String(error.message || error).slice(0, 450), at: Date.now() };
+    else delete failures[key];
+    checks[book] = { ...entry, failures };
+    sharedWrite(NAV_CHECK_KEY, checks);
+    paintTaskOptions();
+  }
+  function finishBookNavigationCheck(book) {
+    const checks = readNavigationChecks();
+    checks[book] = { ...navigationBookRecord(book), checkedAt: Date.now() };
+    sharedWrite(NAV_CHECK_KEY, checks);
+    paintTaskOptions();
+  }
   let accountIdentity = null;
   const accountSubmittedKey = () => accountIdentity ? SUBMITTED_BY_ACCOUNT + accountIdentity.key : '';
   const PANEL_KEY = 'ucampus-panel-pos';
@@ -2283,9 +2318,9 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
       const alias = SUBMITTED_BY_ACCOUNT + 'site-id/' + encodeURIComponent(accountIdentity.schId || '') + '/' + encodeURIComponent(accountIdentity.appUserId);
       if (alias !== key) {
         const previous = sharedRead(alias, []);
-        if (Array.isArray(previous) && previous.some(item => !done.has(item))) {
+        if (Array.isArray(previous) && previous.length) {
           for (const item of previous) done.add(item);
-          try { sharedWrite(key, [...done]); } catch { /* 存储故障时本页仍展示匹配到的记录 */ }
+          try { sharedWrite(key, [...done]); sharedWrite(alias, []); } catch { /* 存储故障时本页仍展示匹配到的记录 */ }
         }
       }
     }
@@ -2303,6 +2338,24 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     status(next ? '已识别账号，提交记录已切换到当前账号。' : '账号身份未确认；提交标记暂不显示。');
   }
   const ACCOUNT_SNAPSHOT_KEY = 'ucampus-account-from-home/v1';
+  const ACCOUNT_BINDINGS_KEY = 'ucampus-player-account-bindings/v1';
+  let lastPlayerIdentity = null;
+  const playerBindingKey = identity => identity?.appUserId ? encodeURIComponent(identity.schId || '') + '/' + encodeURIComponent(identity.appUserId) : '';
+  function playerBinding(identity) {
+    const record = sharedRead(ACCOUNT_BINDINGS_KEY, {})?.[playerBindingKey(identity)];
+    return record && record.appUserId === identity?.appUserId && String(record.schId || '') === String(identity?.schId || '') &&
+      accountRecord(record.school, record.student) ? record : null;
+  }
+  async function fetchPlayerIdentity() {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const response = await fetch('/auth/api/user', { credentials: 'same-origin', redirect: 'manual', signal: controller.signal });
+      if (!response.ok) return null;
+      return await response.json();
+    } catch { return null; }
+    finally { clearTimeout(timeout); }
+  }
   function accountOnHome() {
     let state = {};
     try { state = JSON.parse(localStorage.getItem('PORTAL_STATE_PERSISTENT') || '{}') || {}; } catch {}
@@ -2325,13 +2378,9 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     accountRefreshPromise = (async () => {
       let next = null;
       if (window.location.hostname === 'ucontent.unipus.cn') {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 5000);
-        try {
-          const response = await fetch('/auth/api/user', { credentials: 'same-origin', redirect: 'manual', signal: controller.signal });
-          if (response.ok) next = accountFromPlayer(await response.json(), lastHomeAccount());
-        } catch { /* 登录接口不可用时，不按旧缓存猜账号。 */ }
-        finally { clearTimeout(timeout); }
+        const payload = await fetchPlayerIdentity();
+        lastPlayerIdentity = payload ? accountFromPlayer(payload, null) : null;
+        if (lastPlayerIdentity) next = accountFromPlayer(payload, lastHomeAccount(), playerBinding(lastPlayerIdentity));
       } else {
         next = accountOnHome();
         if (next && JSON.stringify(lastHomeAccount()) !== JSON.stringify(next)) { try { sharedWrite(ACCOUNT_SNAPSHOT_KEY, next); } catch {} }
@@ -2414,9 +2463,22 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
           unitNode.className = 'unit'; unitNode.appendChild(unitTitle); bookNode.appendChild(unitNode);
           const rows = new Map();
           for (const entry of unit.entries) {
+            const line = document.createElement('div'); line.className = 'task-line';
             const row = document.createElement('button'); row.type = 'button'; row.className = 'task-row';
             row.onclick = () => { ui('task').value = String(entry.index); ui('task').dispatchEvent(new Event('change', { bubbles: true })); };
-            unitNode.appendChild(row); rows.set(entry.index, row);
+            const action = document.createElement('button'); action.type = 'button'; action.className = 'task-manual';
+            action.onclick = run(async () => {
+              const key = await requireAccountIdentity();
+              if (autoState.running || jumpCheckState.running) throw new Error('请先停止定时任务或跳转检查，再改提交标记。');
+              const task = COURSE_TASKS[entry.index], done = readSubmitted(), taskId = taskKey(task.path, task.book), marked = done.has(taskId);
+              if (accountIdentity?.key !== key) throw new Error('当前账号已变化，请重新核对。');
+              if (!window.confirm(marked ? '撤回这道题在当前账号的本地已提交标记？网页实际提交不会撤回。' : '仅将这道题标记为当前账号已提交？不会填写或提交到 U校园。')) return;
+              if (marked) done.delete(taskId); else done.add(taskId);
+              sharedWrite(accountSubmittedKey(), [...done]);
+              markAnsweredCatalog();
+              status(marked ? '已撤回当前账号的本地已提交标记；网页提交不会撤回。' : '已手动标记当前账号已提交；未向网页发送提交。');
+            }, { alertOnError: true, actionName: '手动更改提交标记' });
+            line.append(row, action); unitNode.appendChild(line); rows.set(entry.index, { row, action });
           }
           taskTreeNodes.set(unit.key, { node: unitNode, title: unitTitle, rows });
         }
@@ -2429,6 +2491,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     const recenter = !!focus && focus !== lastTreeFocus;
     if (recenter && currentIndex >= 0) ui('task').value = String(currentIndex);
     let currentRow = null, currentUnitNode = null;
+    const failedByBook = new Map(books.map(book => [book.name, navigationFailures(book.name)]));
     for (const book of books) {
       const bookState = taskTreeNodes.get(book.name);
       const bookText = book.name + '（' + book.done + '/' + book.total + '）';
@@ -2442,11 +2505,15 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
         if (recenter) state.node.open = activeUnit;
         if (activeUnit) currentUnitNode = state.node;
         for (const entry of unit.entries) {
-          const row = state.rows.get(entry.index), isCurrent = entry.index === currentIndex;
+          const { row, action } = state.rows.get(entry.index), isCurrent = entry.index === currentIndex;
+          const failure = failedByBook.get(book.name)[taskKey(entry.task.path, entry.task.book)];
           const parts = taskBodyPath(entry.task.path);
           const text = (isCurrent ? '▶ 当前题 · ' : '') + parts.at(-1) + '\n' + parts.slice(0, -1).join(' · ');
           if (row.textContent !== text) row.textContent = text;
           row.classList.toggle('done', entry.marked); row.classList.toggle('current', isCurrent); row.classList.toggle('chosen', String(entry.index) === ui('task').value);
+          row.classList.toggle('unreachable', !!failure); row.title = failure ? '跳转未找到：' + failure.reason : '';
+          action.textContent = entry.marked ? '撤回标记' : '标记已提交'; action.disabled = !accountIdentity || autoState.running || jumpCheckState.running;
+          action.title = entry.marked ? '仅撤回当前账号的本地标记' : '仅标记当前账号本地已提交，不向网站提交';
           if (isCurrent) row.setAttribute('aria-current', 'true'); else row.removeAttribute('aria-current');
           if (isCurrent) currentRow = row;
         }
@@ -2488,6 +2555,17 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     // 不给 select 本身上色。Edge 会把这个颜色铺到下拉列表的每一行。
     ui('task').style.backgroundColor = '';
     renderTaskTree(done, current, book);
+    const checked = !!navigationBookRecord(book).checkedAt;
+    ui('jump-check-book').disabled = jumpCheckState.running || checked;
+    ui('jump-check-book').title = checked ? '这本教材已经完整检查过一次，结果由所有账号共享' : '';
+    ui('jump-check-book').textContent = checked ? '整本已检查' : '检查整本教材';
+    if (!jumpCheckState.running) {
+      const failures = navigationFailures(book);
+      const names = COURSE_TASKS.filter(task => taskBook(task) === book && failures[taskKey(task.path, task.book)])
+        .map(task => '✗ ' + task.path.join(' / ') + '：' + failures[taskKey(task.path, task.book)].reason);
+      ui('jump-check-results').textContent = checked || names.length
+        ? (checked ? '本教材已完整检查一次；' : '已有检查记录；') + '未找到 ' + names.length + ' 道。' + (names.length ? '\n' + names.join('\n') : '') : '';
+    }
     updateDataNote(done);
   }
   function rememberSubmitted(task) {
@@ -2672,14 +2750,18 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   };
   ui('timer-toggle').onclick = () => setTimerCollapsed(!ui('timer-body').hidden);
   function compareVersions(left, right) {
-    const a = String(left).split('.').map(part => Number(part) || 0);
-    const b = String(right).split('.').map(part => Number(part) || 0);
-    const length = Math.max(a.length, b.length);
-    for (let index = 0; index < length; index++) {
-      const diff = (a[index] || 0) - (b[index] || 0);
+    const parse = value => {
+      const [core, suffix = ''] = String(value).split('-', 2);
+      return { parts: core.split('.').map(part => /^\d+$/.test(part) ? Number(part) : 0), suffix };
+    };
+    const a = parse(left), b = parse(right);
+    for (let index = 0; index < Math.max(a.parts.length, b.parts.length); index++) {
+      const diff = (a.parts[index] || 0) - (b.parts[index] || 0);
       if (diff) return diff;
     }
-    return 0;
+    if (!a.suffix && b.suffix) return 1;
+    if (a.suffix && !b.suffix) return -1;
+    return a.suffix.localeCompare(b.suffix);
   }
   function selectedUpdateRoute() {
     const route = ui('update-route').value === 'github' ? 'github' : 'server';
@@ -2997,6 +3079,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   async function checkTaskJumps(scope) {
     if (!catalogMenus().length || isShelfPage()) throw new Error('请先打开具体教材的课本播放器，再检查跳转。');
     const book = activeBook();
+    if (scope === 'book' && navigationBookRecord(book).checkedAt) throw new Error('这本教材已经完整检查过一次；失败题已在目录中标为浅蓝色。当前单元仍可检查。');
     const unit = scope === 'unit' ? pageCurrentUnit() : 0;
     if (scope === 'unit' && !unit) throw new Error('无法唯一识别当前单元，请在课本目录打开该单元的一道练习后重试。');
     const tasks = COURSE_TASKS.filter(task => taskBook(task) === book && (scope === 'book' || (isUnitToken(task.path[0]) ? Number(unitNumberFrom(task.path[0])) : 1) === unit));
@@ -3017,24 +3100,27 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
           await jumpToTask(task);
           if (jumpCheckState.cancelled) break;
           passed++;
-          lines.push('✓ ' + name);
+          saveNavigationResult(task, null);
         } catch (error) {
           if (jumpCheckState.cancelled) break;
           failed++;
           lines.push('✗ ' + name + '：' + (error.message || String(error)));
+          saveNavigationResult(task, error);
         }
         result.textContent = `已检查 ${passed + failed}/${tasks.length}，成功 ${passed}，失败 ${failed}\n` + lines.join('\n');
         result.scrollTop = result.scrollHeight;
         await new Promise(resolve => setTimeout(resolve, 200));
       }
       const summary = (jumpCheckState.cancelled ? '跳转检查已停止' : '跳转检查完成') + `：${passed + failed}/${tasks.length} 道，成功 ${passed}，失败 ${failed}。`;
-      result.textContent = summary + '\n' + lines.join('\n');
-      status(summary + (failed ? ' 失败原因见教材目录下的检查记录。' : ''));
+      if (scope === 'book' && !jumpCheckState.cancelled && passed + failed === tasks.length) finishBookNavigationCheck(book);
+      result.textContent = summary + (failed ? '\n仅列出未找到：\n' + lines.join('\n') : '\n没有未找到的练习。');
+      status(summary + (failed ? ' 仅未找到的练习列在教材目录下。' : ''));
     } finally {
       jumpCheckState.running = false;
       ui('jump-check-unit').disabled = false;
-      ui('jump-check-book').disabled = false;
+      ui('jump-check-book').disabled = !!navigationBookRecord(book).checkedAt;
       ui('jump-check-stop').disabled = true;
+      paintTaskOptions();
     }
   }
   function taskMatches(task, base, name) {
@@ -3124,14 +3210,16 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     if (!catalogMenus().length || isShelfPage()) throw new Error('请先打开具体课本练习页，再启动定时任务。');
     const selected = selectedTask();
     if (taskBook(selected) !== activeBook()) throw new Error('请先打开所选教材，不会跨书填写。');
-    const plan = buildAutoPlan(COURSE_TASKS, readSubmitted(), selected, ui('auto-scope').value || 'unit', Number(ui('auto-count').value), true);
+    const failedKeys = Object.keys(navigationFailures(taskBook(selected)));
+    const excluded = new Set([...readSubmitted(), ...failedKeys]);
+    const plan = buildAutoPlan(COURSE_TASKS, excluded, selected, ui('auto-scope').value || 'unit', Number(ui('auto-count').value), true);
     const targetCount = Number(ui('auto-count').value);
     const minutes = Number(ui('auto-minutes').value);
     if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 1440 || minutes * 60000 / targetCount < 1000) throw new Error('分钟数应大于0且不超过1440，平均每道至少1秒。');
     autoState = { running: true, cancelled: false, accountKey: expectedAccountKey, skipped: [], startedAt: Date.now(), completed: 0, targetCount, phase: 'jumping' };
     autoState.clockTimer = setInterval(updateTimerMetrics, 1000);
     updateTimerMetrics();
-    ui('auto-skipped').textContent = '';
+    ui('auto-skipped').textContent = failedKeys.length ? '已按整本教材共享检查结果预先跳过 ' + failedKeys.length + ' 道跳转未找到的练习（不计完成）。' : '';
     ui('auto-start').disabled = true; ui('auto-stop').disabled = false; ui('timer-stop-quick').disabled = false;
     for (const id of ['auto-minutes', 'auto-count', 'auto-scope']) ui(id).disabled = true;
     timerStatus('正在准备定时任务……');
@@ -3143,6 +3231,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
         onProgress: completed => { autoState.completed = completed; updateTimerMetrics(); },
         onSkip: (task, error) => {
           autoState.skipped.push(task.path.join(' / ') + '：' + (error?.message || String(error)));
+          saveNavigationResult(task, error);
           appendActivityLog('跳过：' + task.path.join(' / ') + '。原因：' + String(error?.message || error).split(/[。\n]/)[0]);
           ui('auto-skipped').textContent = '跳过记录（不计完成）：\n' + autoState.skipped.join('\n');
         },
@@ -3176,7 +3265,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   }
   function updateDataNote(done) {
     const matched = COURSE_TASKS.filter(task => done.has(taskKey(task.path, task.book))).length;
-    const text = '本地已确认提交：' + matched + '道；教程3已收录Unit 1—6（部分分组题待核实）。';
+    const text = '本地标记已提交：' + matched + '道（含手动标记）；教程3已收录Unit 1—6（部分分组题待核实）。';
     if (ui('data-note').textContent !== text) ui('data-note').textContent = text;
     const legacy = sharedRead(SUBMITTED_KEY, []);
     const owner = sharedRead(LEGACY_OWNER_KEY, null)?.key || '';
@@ -3187,7 +3276,10 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     ui('account-note').textContent = accountIdentity
       ? '提交记录按当前账号隔离。' + (owner && owner !== accountIdentity.key ? '旧版记录已归属其他账号。' : unclaimed ? '另有 ' + unclaimed + ' 条旧版记录待认领。' : '')
       : '账号尚未识别；旧版记录仍在本机，识别后可认领，当前不显示标绿。';
-    ui('claim-legacy').disabled = !accountIdentity || !unclaimed || !!owner && owner !== accountIdentity.key;
+    ui('bind-account').hidden = window.location.hostname !== 'ucontent.unipus.cn';
+    ui('bind-account').disabled = !lastPlayerIdentity?.appUserId;
+    ui('bind-account').textContent = playerBinding(lastPlayerIdentity) ? '修改账号绑定' : '绑定学校和学号';
+    ui('claim-legacy').disabled = !accountIdentity?.student || !accountIdentity?.school || /^学校(编号|待确认)/.test(accountIdentity.school) || !unclaimed || !!owner && owner !== accountIdentity.key;
     ui('claim-legacy').textContent = unclaimed ? '认领旧版提交记录（' + unclaimed + '条）' : '没有待认领的旧记录';
     return matched;
   }
@@ -3245,8 +3337,31 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   window.addEventListener('focus', () => { void refreshAccountIdentity(); });
   ui('refresh-account').onclick = run(async () => {
     const identity = await refreshAccountIdentity();
-    status(identity ? '当前账号：' + identity.label + '；提交记录已按账号隔离。' : '没有确认学校与学号。请先打开首页显示个人资料，再返回课本页重试。');
+    status(identity ? '当前账号：' + identity.label + '；提交记录已按账号隔离。' : '没有确认学校与学号。可先在 U校园首页确认学校和学号，再回课本页使用「绑定学校和学号」。');
   });
+  ui('bind-account').onclick = run(async () => {
+    if (window.location.hostname !== 'ucontent.unipus.cn') throw new Error('请在课本播放器页面绑定账号。');
+    const payload = await fetchPlayerIdentity(), player = payload ? accountFromPlayer(payload, null) : null;
+    if (!player?.appUserId || !lastPlayerIdentity || playerBindingKey(player) !== playerBindingKey(lastPlayerIdentity)) throw new Error('课本登录编号未读取到或已切换，请刷新账号后重试。');
+    const home = lastHomeAccount(), bound = playerBinding(player);
+    const school = window.prompt('课本账号编号 ' + player.appUserId + ' 对应的 U校园学校名称：', bound?.school || home?.school || '');
+    if (school === null) return;
+    const student = window.prompt('课本账号编号 ' + player.appUserId + ' 对应的 U校园学号：', bound?.student || home?.student || '');
+    if (student === null) return;
+    const record = accountRecord(school, student, { appUserId: player.appUserId, schId: player.schId });
+    if (!record || /^学校(编号|待确认)/.test(record.school)) throw new Error('学校名称或学号格式不正确，未保存绑定。');
+    if (player.student && player.student !== record.student) throw new Error('课本接口返回的学号与填写的不一致，未保存绑定。');
+    if (player.school && !/^学校(编号|待确认)/.test(player.school) && compactLabel(player.school) !== compactLabel(record.school)) throw new Error('课本接口返回的学校与填写的不一致，未保存绑定。');
+    if (!window.confirm('确认把当前课本账号编号 ' + player.appUserId + ' 绑定到「' + record.school + ' · 学号 ' + record.student + '」？以后该编号使用这个账号的独立提交记录；旧版共用记录仍需单独认领。')) return;
+    const latest = await fetchPlayerIdentity(), live = latest ? accountFromPlayer(latest, null) : null;
+    if (!live?.appUserId || playerBindingKey(live) !== playerBindingKey(player)) throw new Error('保存前课本登录账号发生变化，未绑定。');
+    const bindings = sharedRead(ACCOUNT_BINDINGS_KEY, {});
+    bindings[playerBindingKey(player)] = record;
+    sharedWrite(ACCOUNT_BINDINGS_KEY, bindings);
+    await refreshAccountIdentity();
+    if (accountIdentity?.key !== record.key) throw new Error('绑定已保存，但课本接口身份无法与填写内容对应；未切换提交记录。');
+    status('已绑定当前课本账号编号 ' + player.appUserId + '：' + record.school + ' · 学号 ' + record.student + '。旧版共用记录不会自动认领。');
+  }, { alertOnError: true, actionName: '绑定课本账号' });
   ui('read-books').onclick = run(async () => readShelf());
   ui('auto-minutes').oninput = autoProgressPreview; ui('auto-count').oninput = autoProgressPreview;
   ui('auto-start').onclick = run(async () => {
@@ -3265,14 +3380,15 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   }, true);
   ui('detect').onclick = run(async () => detectTask());
   const jumpErrorOptions = { alertOnError: true, actionName: '跳转', errorHint: '请查看当前网页及上面的失败原因。可手动打开对应练习后，点“记住当前页位置”，再尝试跳转。' };
-  ui('jump').onclick = run(async () => { status(await jumpToTask(selectedTask())); }, jumpErrorOptions);
+  ui('jump').onclick = run(async () => { const task = selectedTask(); const result = await jumpToTask(task); saveNavigationResult(task, null); status(result); }, jumpErrorOptions);
   ui('jump-check-unit').onclick = run(() => checkTaskJumps('unit'));
   ui('jump-check-book').onclick = run(() => checkTaskJumps('book'));
   ui('jump-check-stop').onclick = () => { if (jumpCheckState.running) { jumpCheckState.cancelled = true; ui('jump-check-results').textContent = '正在停止跳转检查……\n' + ui('jump-check-results').textContent; } };
   ui('bind-route').onclick = run(async () => { status(saveCurrentTaskRoute(selectedTask())); });
   ui('task').onchange = run(async () => {
     paintTaskOptions();
-    status(await jumpToTask(selectedTask()));
+    const task = selectedTask(); const result = await jumpToTask(task);
+    saveNavigationResult(task, null); status(result);
   }, jumpErrorOptions);
   ui('fill-course').onclick = run(async () => { status(await fillCourseTask(selectedTask())); });
   ui('submit-course').onclick = run(async () => {
@@ -3285,6 +3401,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     const remembered = accountIdentity?.key === accountKey && rememberSubmitted(task);
     status(`${filled}\n${submitted}${remembered ? '\n这道题已记住，目录里标成绿色。' : '\n提交了，但这台浏览器没有记住。'}`);
   }, { alertOnError: true, actionName: '填写并提交' });
+  ui('submit-top').onclick = () => ui('submit-course').click();
   ui('submit-only').onclick = run(async () => {
     // 只提交网页现有答案；不调用填写函数，也不依赖列表当前选项。
     const accountKey = await requireAccountIdentity();
