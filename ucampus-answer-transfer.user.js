@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         U校园 · 我的答案搬运助手
 // @namespace    local.ucampus.answer-transfer
-// @version      0.4.5
+// @version      0.4.8
 // @description  按本人整理的答案填写当前练习，并点击页面上的提交节点。只填已给出的答案。
 // @match        https://uai.unipus.cn/*
 // @match        https://ucontent.unipus.cn/*
@@ -21,7 +21,7 @@
 
 (() => {
   'use strict';
-  const SCRIPT_VERSION = '0.4.5';
+  const SCRIPT_VERSION = '0.4.8';
   const UPDATE_ROUTES = {
     server: 'https://dl.keon5223.xyz/ucampus-answer-transfer.user.js',
     github: 'https://raw.githubusercontent.com/keonxyz5223-beep/ucampus-answer-transfer/main/ucampus-answer-transfer.user.js'
@@ -78,12 +78,65 @@
     return CONFIRMED_BOOKS.find(name => compactLabel(name) === compact) || text || DEFAULT_BOOK;
   }
   function taskBook(task) { return bookName(task?.book || DEFAULT_BOOK); }
+  function accountRecord(schoolValue, studentValue, details = {}) {
+    const school = normalize(schoolValue), student = normalize(studentValue);
+    if (school.length < 2 || school.length > 100 || !/^[A-Za-z0-9_-]{4,40}$/.test(student)) return null;
+    return {
+      key: encodeURIComponent(compactLabel(school)) + '/' + encodeURIComponent(student),
+      school, student, label: school + ' · 学号 ' + student,
+      appUserId: String(details.appUserId || ''), schId: String(details.schId || '')
+    };
+  }
+  function accountFromHomeFields(school, roleText, state = {}) {
+    const text = normalize(String(roleText || '').replace(/["“”']/g, ''));
+    const match = /学号\s*[:：]?\s*([A-Za-z0-9_-]{4,40})(?![A-Za-z0-9_-])/.exec(text);
+    if (!match || state.code && normalize(state.code) !== match[1]) return null;
+    return accountRecord(school, match[1], { appUserId: state.userId, schId: state.schId });
+  }
+  function accountFromHomeState(state) {
+    return state?.userId ? accountRecord(state.schName, state.code, { appUserId: state.userId, schId: state.schId }) : null;
+  }
+  function accountFromPlayer(payload, portal) {
+    const candidates = [payload?.value?.userInfo, payload?.data?.userInfo, payload?.rt?.userInfo, payload?.value?.user,
+      payload?.data?.user, payload?.rt?.user, payload?.value, payload?.data, payload?.rt, payload?.user, payload];
+    const user = candidates.find(item => item && typeof item === 'object' &&
+      (item.appUserId || item.user_id || item.userId || item.open_id || item.openId || item.studentId || item.studentNo || item.user_num || item.id));
+    if (!user) return null;
+    const rawStudent = user.studentId ?? user.studentNo ?? user.user_num ?? user.student_code ?? user.code;
+    const student = /^[A-Za-z0-9_-]{4,40}$/.test(String(rawStudent || '')) ? String(rawStudent) : '';
+    const userId = user.appUserId ?? user.user_id ?? user.userId ?? user.open_id ?? user.openId ?? user.id;
+    const schId = user.schId ?? user.school ?? user.user_school_id;
+    const school = user.schName || user.schoolName || user.school_name || (typeof user.school === 'string' && !/^\d+$/.test(user.school) ? user.school : '');
+    if (portal?.appUserId && userId && String(userId) === portal.appUserId &&
+        (!portal.schId || !schId || String(schId) === portal.schId) && (!student || student === portal.student)) return portal;
+    if (portal?.appUserId && userId && portal.student === normalize(student) && portal.appUserId !== String(userId) && /^[A-Za-z0-9_-]{1,80}$/.test(String(userId))) {
+      const resolvedSchool = school || (portal.schId && String(schId) === portal.schId ? portal.school : '学校待确认');
+      return { key: 'site-id/' + encodeURIComponent(String(schId || '')) + '/' + encodeURIComponent(String(userId)),
+        school: resolvedSchool, student: String(student), label: resolvedSchool + ' · 学号 ' + String(student), appUserId: String(userId), schId: String(schId || '') };
+    }
+    const direct = accountRecord(school, student, { appUserId: userId, schId });
+    if (direct) return direct;
+    const sameSchool = !!(portal?.schId && schId && String(schId) === portal.schId);
+    const sameUser = !!(portal?.appUserId && userId && String(userId) === portal.appUserId);
+    if (sameSchool || sameUser && !portal?.schId) {
+      const resolved = accountRecord(portal.school, student, { appUserId: userId, schId });
+      if (resolved) return resolved; // 同校另一学号也分配自己的记录区。
+    }
+    const unknownSchool = schId ? '学校编号 ' + String(schId) : '';
+    const separate = accountRecord(unknownSchool, student, { appUserId: userId, schId });
+    if (separate && (schId || userId)) return separate;
+    if (userId && /^[A-Za-z0-9_-]{1,80}$/.test(String(userId))) return {
+      key: 'site-id/' + encodeURIComponent(String(schId || '')) + '/' + encodeURIComponent(String(userId)), school: unknownSchool || '学校待确认', student: '',
+      label: (unknownSchool || '学校待确认') + ' · 账号编号 ' + String(userId), appUserId: String(userId), schId: String(schId || '')
+    };
+    return null;
+  }
   function storedValue(value) {
     if (typeof value !== 'string') return value;
     try { return JSON.parse(value); } catch { return undefined; }
   }
   function usableStoredValue(key, value) {
-    if (key === 'ucampus-submitted-tasks') return Array.isArray(value) && value.every(item => typeof item === 'string');
+    if (key === 'ucampus-submitted-tasks' || key.startsWith('ucampus-submitted-tasks/v2/')) return Array.isArray(value) && value.every(item => typeof item === 'string');
     if (key === 'ucampus-imported-course-tasks/v1') {
       if (value?.schema !== 'ucampus-course-answers/v1' || !Array.isArray(value.tasks)) return false;
       try { if (value.tasks.length) validateCourseImport(value); return true; } catch { return false; }
@@ -97,7 +150,7 @@
     const hasShared = usableStoredValue(key, value), hasLocal = usableStoredValue(key, local);
     if (!hasShared && !hasLocal) return fallback;
     let merged = hasShared ? value : local;
-    if (hasShared && hasLocal && key === 'ucampus-submitted-tasks') merged = [...new Set([...value, ...local])];
+    if (hasShared && hasLocal && (key === 'ucampus-submitted-tasks' || key.startsWith('ucampus-submitted-tasks/v2/'))) merged = [...new Set([...value, ...local])];
     if (hasShared && hasLocal && key === 'ucampus-imported-course-tasks/v1') {
       // 根course也属于教材身份，不能在合并跨书答案时丢掉。
       const tasks = new Map();
@@ -1506,7 +1559,7 @@
   }
   // 允许离线验证答案格式，不在 Node 环境启动页面界面。
   if (typeof document === 'undefined') {
-    if (typeof module !== 'undefined') module.exports = { normalize, fingerprint, validateAnswers, compactLabel, suggestTasks, alignedMenuPath, answeredMenuFlags, menuAlignment, nextMenuJump, navigationPath, taskKey, unitCompatible, validateCourseImport, planSequenceMoves, groupCourseTasks, formatTaskAnswers, correctionDetails, buildAutoPlan, executeTimedPlan, bookName, taskBook, CONFIRMED_BOOKS, COURSE_TASKS };
+    if (typeof module !== 'undefined') module.exports = { normalize, fingerprint, validateAnswers, compactLabel, suggestTasks, alignedMenuPath, answeredMenuFlags, menuAlignment, nextMenuJump, navigationPath, taskKey, unitCompatible, validateCourseImport, planSequenceMoves, groupCourseTasks, formatTaskAnswers, correctionDetails, accountRecord, accountFromHomeFields, accountFromHomeState, accountFromPlayer, buildAutoPlan, executeTimedPlan, bookName, taskBook, CONFIRMED_BOOKS, COURSE_TASKS };
     return;
   }
   if (document.getElementById('ucampus-transfer-host')) return;
@@ -1516,39 +1569,42 @@
   shadow.innerHTML = `<style>
 :host{all:initial;position:fixed;right:20px;top:32px;z-index:2147483646;font:13px/1.55 'Segoe UI','Microsoft YaHei',system-ui,sans-serif;color:#24334b;--accent:#345bea;--line:#e3e9f3;--muted:#738096;color-scheme:light}
 *,*::before,*::after{box-sizing:border-box} [hidden]{display:none!important}
-section{width:408px;max-width:calc(100vw - 24px);max-height:calc(100vh - 56px);display:flex;flex-direction:column;background:#f4f7fc;border:1px solid #dce4f0;border-radius:20px;box-shadow:0 20px 65px #203a6324,0 3px 12px #203a6312;overflow:hidden}
+section{width:480px;max-width:calc(100vw - 24px);max-height:calc(100vh - 56px);display:flex;flex-direction:column;background:#f4f7fc;border:1px solid #dce4f0;border-radius:20px;box-shadow:0 20px 65px #203a6324,0 3px 12px #203a6312;overflow:hidden}
 header{display:flex;align-items:center;gap:11px;padding:17px 18px 14px;background:#fff;cursor:grab;user-select:none;touch-action:none;flex-shrink:0}header:active{cursor:grabbing}.brand-mark{display:grid;place-items:center;width:39px;height:39px;flex-shrink:0;border-radius:13px;background:linear-gradient(140deg,#5479ff,#3455d9);color:#fff;font:bold 24px/1 'Segoe UI',sans-serif;box-shadow:0 5px 12px #345bea25}.brand-copy{flex:1;min-width:0}.brand-copy strong{display:block;font-size:16px;letter-spacing:.3px;color:#1c2c46}.brand-copy span{font-size:10px;letter-spacing:1.1px;color:#8793a6}.version{font-size:10px;color:#8793a6;font-weight:500;margin-left:5px;letter-spacing:0}
 button{appearance:none;cursor:pointer;border:1px solid #dce4f0;border-radius:9px;background:#fff;padding:9px 11px;font:600 12px/1.45 'Segoe UI','Microsoft YaHei',sans-serif;font-family:inherit;color:#465975;transition:background .15s,border-color .15s,box-shadow .15s,transform .15s;min-width:0}button:hover:not(:disabled){background:#f0f4ff;border-color:#aebef8;box-shadow:0 2px 5px #2548a00b}button:active:not(:disabled){transform:translateY(1px)}button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #345bea38;outline-offset:2px}button:disabled{opacity:.42;cursor:default}#toggle,#timer-toggle{padding:6px 10px;border:0;background:#f0f3f9;color:#67758b;font-size:11px}
 .current-banner{padding:0 18px 13px;background:#fff;border-bottom:1px solid var(--line)}#current-task{display:block;margin:0;padding:9px 11px;border-radius:9px;color:#3157c2;background:#edf2ff;font-size:11px;line-height:1.6;font-weight:600;overflow-wrap:anywhere}#body,#timer-body{overflow:auto;overscroll-behavior:contain;padding:14px;min-height:0;scrollbar-width:thin;scrollbar-color:#cbd5e6 transparent}#body::-webkit-scrollbar,#task-tree::-webkit-scrollbar,textarea::-webkit-scrollbar{width:5px}#body::-webkit-scrollbar-thumb,#task-tree::-webkit-scrollbar-thumb,textarea::-webkit-scrollbar-thumb{background:#cbd5e6;border-radius:10px}
 .card{background:#fff;border:1px solid var(--line);border-radius:13px;padding:13px;margin-bottom:11px}.card-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;gap:8px}.card-heading strong{font-size:13px;color:#253752}.caption{font-size:10px;font-weight:500;color:#92a0b3;letter-spacing:.5px}.toolbar{display:grid;grid-template-columns:1fr 1fr;gap:7px}.toolbar button{padding:7px 5px;font-size:11px;background:#f7f9fd}.legend{display:flex;gap:12px;font-size:10px;color:#7d8b9e;margin:10px 0 0}.legend span{display:flex;align-items:center;gap:4px}.dot{width:6px;height:6px;border-radius:50%;display:inline-block}.dot.pending{background:#c65460}.dot.done{background:#47a778}.dot.current{background:#4168e9}
-#data-note{font-size:10px;color:#8190a6;margin:8px 0 0}#books-note{margin:0}#task-tree{max-height:180px;overflow:auto;overflow-x:hidden;overscroll-behavior:contain;margin-top:10px;scrollbar-width:thin}#task-tree>details{border:1px solid #e8edf5;border-radius:9px;margin-bottom:6px;background:#fff}#task-tree>details>summary{font-size:11px;line-height:1.7;padding:9px 10px;color:#41516b;background:#f8faff;border-radius:9px}#task-tree .unit{margin:4px 5px 7px}summary{cursor:pointer;font-weight:600;list-style:none;position:relative;padding-right:16px;overflow-wrap:anywhere}summary::-webkit-details-marker{display:none}summary::after{content:'›';font:18px/1 sans-serif;color:#9aa8ba;position:absolute;right:3px;top:50%;transform:translateY(-50%) rotate(0deg);transition:transform .15s}details[open]>summary::after{transform:translateY(-50%) rotate(90deg)}#task-tree>details>summary::after{right:9px}#task-tree .unit>summary{padding:7px 11px;font-size:11px;color:#6b7e97}.task-row{display:block;width:calc(100% - 8px);margin:4px;padding:8px 10px;text-align:left;font-size:10px;font-weight:400;line-height:1.65;white-space:pre-line;border:1px solid #f0e2e6;border-radius:8px;color:#b15160;background:#fffafb}.task-row::first-line{font-size:11px;font-weight:650}.task-row.done{background:#edf8f1;color:#397556;border-color:#d9eddf}.task-row.current{border-color:#6f8cf0;background:#eef3ff;color:#315cc9;box-shadow:inset 3px 0 #436be5}.task-row.chosen:not(.current){outline:1px dashed #aab8cf;outline-offset:-1px}
+#data-note{font-size:10px;color:#8190a6;margin:8px 0 0}#books-note{margin:0}#task-tree{height:min(340px,42vh);min-height:210px;overflow:auto;overflow-x:hidden;overscroll-behavior:contain;margin-top:10px;scrollbar-width:thin}#task-tree>details{border:1px solid #e8edf5;border-radius:9px;margin-bottom:6px;background:#fff}#task-tree>details>summary{font-size:11px;line-height:1.7;padding:9px 10px;color:#41516b;background:#f8faff;border-radius:9px}#task-tree .unit{margin:4px 5px 7px}summary{cursor:pointer;font-weight:600;list-style:none;position:relative;padding-right:16px;overflow-wrap:anywhere}summary::-webkit-details-marker{display:none}summary::after{content:'›';font:18px/1 sans-serif;color:#9aa8ba;position:absolute;right:3px;top:50%;transform:translateY(-50%) rotate(0deg);transition:transform .15s}details[open]>summary::after{transform:translateY(-50%) rotate(90deg)}#task-tree>details>summary::after{right:9px}#task-tree .unit>summary{padding:9px 11px;font-size:12px;color:#6b7e97}.task-row{display:block;width:calc(100% - 8px);margin:4px;padding:10px 12px;text-align:left;font-size:11px;font-weight:400;line-height:1.65;white-space:pre-line;border:1px solid #f0e2e6;border-radius:8px;color:#b15160;background:#fffafb}.task-row::first-line{font-size:12px;font-weight:650}.task-row.done{background:#edf8f1;color:#397556;border-color:#d9eddf}.task-row.current{border-color:#6f8cf0;background:#eef3ff;color:#315cc9;box-shadow:inset 3px 0 #436be5}.task-row.chosen:not(.current){outline:1px dashed #aab8cf;outline-offset:-1px}
 small{display:block;font-size:10px;color:#8190a6;line-height:1.7;margin:7px 0 0}.hint{margin-top:9px}.card>summary{font-size:12px;color:#354864;padding:0 19px 0 0}.card[open]>summary{margin-bottom:10px}.answer-title{color:#8a98aa;font-size:10px;font-weight:400;margin-left:5px}#answer-path{font-size:10px;color:#8290a5;overflow-wrap:anywhere;margin:5px 0 8px}
 textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px;color:#354760;border:1px solid #dfe6f1;border-radius:9px;background:#fbfcff;padding:9px 11px}textarea{height:110px;resize:vertical;line-height:1.9;display:block;scrollbar-width:thin}#answer-display{background:#f7f9fd;color:#3a4f70;font-family:'Cascadia Mono',Consolas,'Microsoft YaHei',monospace;letter-spacing:.2px}#answers{margin:10px 0;font-family:Consolas,monospace;font-size:11px}select{margin:10px 0;appearance:auto}input[type=file]{max-width:100%;font-size:11px;color:#8090a7}input[type=file]::file-selector-button{border:1px solid #dbe4f3;background:#f3f6fd;color:#50688c;border-radius:7px;padding:7px 9px;margin-right:8px;cursor:pointer;font-family:inherit}label{font-size:11px;color:#6b7e97;display:block}input[type=number]{margin-top:5px;font-size:18px;font-weight:650;color:#304c8f;font-variant-numeric:tabular-nums}
 .utility-actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}.utility-actions button{font-size:10px;padding:7px 3px;border-color:#e5eaf3;color:#7b8ba2}.main-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:10px}#submit-course{grid-column:1/-1;background:var(--accent);color:#fff;border-color:var(--accent);font-size:13px;padding:11px;box-shadow:0 4px 10px #345bea1d}#submit-course:hover:not(:disabled),#auto-start:hover:not(:disabled){background:#284bd1;border-color:#284bd1}#fill-course{color:#4960a0;background:#f4f7ff;border-color:#dfe6fc}#submit-only{color:#36805d;background:#f3faf6;border-color:#daeee3}.number-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}#auto-preview{background:#f2f5fe;color:#647ca9;border-radius:8px;padding:9px 10px;margin:0 0 10px;font-size:10px}.auto-actions{display:grid;grid-template-columns:1fr 76px;gap:7px}#auto-start{background:#345bea;border-color:#345bea;color:#fff}#auto-stop{color:#c26068;background:#fff5f6;border-color:#f1dce0}#auto-skipped{font-size:10px;background:#fff8ec;color:#a57933;border-radius:8px;padding:8px;max-height:100px;margin-top:10px}#auto-skipped:empty{display:none}.import-actions{display:flex;flex-wrap:wrap;gap:6px}.import-actions button{font-size:10px;padding:7px 9px}.advanced-tools{margin-top:12px;padding-top:10px;border-top:1px solid #edf1f7}.advanced-tools>summary{font-size:11px;color:#92a0b3}.advanced-tools .import-actions{margin-top:10px}
 .status-card{padding:11px 12px;background:#edf2fc;border:1px solid #dfe7f5;border-radius:11px}.status-label{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:650;letter-spacing:.5px;color:#8293ae}.status-label::before{content:'';width:5px;height:5px;background:#6e8ad1;border-radius:50%}pre{white-space:pre-wrap;overflow:auto;overflow-wrap:anywhere;font:11px/1.8 'Segoe UI','Microsoft YaHei',sans-serif;font-family:inherit;max-height:145px;margin:5px 0 0;color:#536d96}#status[data-state=error]{color:#b15a61}#status[data-state=success]{color:#38795c}.panel-foot{text-align:center;font-size:9px;letter-spacing:.5px;color:#a3aec0;margin:10px 0 0}
 @media(max-width:480px){:host{right:12px;top:16px}section{max-height:calc(100vh - 32px)}header{padding:13px 14px}#body{padding:10px}}
 
-.timer-window{position:fixed;right:448px;top:32px;width:320px;z-index:2147483646}.timer-window header{padding:14px;gap:9px}.timer-window .brand-copy strong{font-size:15px}.timer-mark{width:34px;height:34px;display:grid;place-items:center;border-radius:11px;background:#eaf0ff;color:#4167dc;font-size:25px;font-weight:650}.timer-window .current-banner{padding:0 14px 12px}#timer-summary{background:#edf2ff;color:#4c68a7;font-size:10px;padding:8px 10px;border-radius:8px;margin:0;max-height:52px;overflow:hidden;overflow-wrap:anywhere}#timer-start-path{margin:0;font-size:10px;overflow-wrap:anywhere;color:#7085a5}#timer-stop-quick{padding:6px 9px;color:#bb5963;background:#fff4f5;border-color:#f1d9dd;font-size:11px}#timer-body{padding:12px}.timer-window #auto-scope{font-size:11px}.timer-window #timer-status[data-state=error]{color:#b15a61}.timer-window #timer-status[data-state=success]{color:#38795c}.timer-link{display:block;width:100%;margin:0 0 11px;padding:10px;background:#edf2ff;border-color:#d9e2fc;color:#4666c7}.update-route{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 8px;font-size:11px;color:#70829b}.update-route select{flex:1;border:1px solid #dce4f0;border-radius:8px;background:#fff;padding:7px 8px;font:inherit;color:#31435f}
+.timer-window{position:fixed;right:520px;top:32px;width:320px;z-index:2147483646}.timer-window header{padding:14px;gap:9px}.timer-window .brand-copy strong{font-size:15px}.timer-mark{width:34px;height:34px;display:grid;place-items:center;border-radius:11px;background:#eaf0ff;color:#4167dc;font-size:25px;font-weight:650}.timer-window .current-banner{padding:0 14px 12px}#timer-summary{background:#edf2ff;color:#4c68a7;font-size:10px;padding:8px 10px;border-radius:8px;margin:0;max-height:52px;overflow:hidden;overflow-wrap:anywhere}#timer-start-path{margin:0;font-size:10px;overflow-wrap:anywhere;color:#7085a5}#timer-stop-quick{padding:6px 9px;color:#bb5963;background:#fff4f5;border-color:#f1d9dd;font-size:11px}#timer-body{padding:12px}.timer-window #auto-scope{font-size:11px}.timer-window #timer-status[data-state=error]{color:#b15a61}.timer-window #timer-status[data-state=success]{color:#38795c}.timer-link{display:block;width:100%;margin:0 0 11px;padding:10px;background:#edf2ff;border-color:#d9e2fc;color:#4666c7}.update-route{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 8px;font-size:11px;color:#70829b}.update-route select{flex:1;border:1px solid #dce4f0;border-radius:8px;background:#fff;padding:7px 8px;font:inherit;color:#31435f}
 .timer-metrics{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px}.timer-stat{border:1px solid #dfe7f7;background:#fff;border-radius:12px;padding:10px 12px}.timer-stat small{margin:0;font-size:10px;color:#8594aa}.timer-stat strong{display:block;margin-top:4px;font-size:23px;font-weight:650;line-height:1.3;color:#3b60c7;font-variant-numeric:tabular-nums}#timer-remaining{font-size:21px}.timer-progress-line{display:flex;justify-content:space-between;gap:8px;font-size:10px;margin:0 2px 12px;color:#7a8fac}#timer-phase{color:#4869c1}#timer-task{margin:0;color:#5b7298;font-size:11px;line-height:1.8;overflow-wrap:anywhere}
-.window-links{display:grid;grid-template-columns:1fr 1fr;gap:8px}.log-window{position:fixed;right:784px;top:32px;width:340px;max-height:360px;z-index:2147483646}.log-window header{padding:13px;gap:8px}.log-window .brand-copy strong{font-size:15px}#log-export,#log-clear,#log-close{padding:6px 8px;font-size:10px;color:#71839e;border-color:#e0e7f2}#log-body{padding:0 12px 12px;min-height:0;overflow:hidden}#log-list{height:235px;max-height:calc(100vh - 190px);overflow:auto;border:1px solid #e0e8f5;border-radius:10px;background:#fff;padding:9px 10px;color:#5b7195;font-size:11px;line-height:1.9;scrollbar-width:thin;margin:0}#log-body small{font-size:9px;margin-top:7px}
+.window-links{display:grid;grid-template-columns:1fr 1fr;gap:8px}.log-window{position:fixed;right:856px;top:32px;width:340px;max-height:360px;z-index:2147483646}.log-window header{padding:13px;gap:8px}.log-window .brand-copy strong{font-size:15px}#log-export,#log-clear,#log-close{padding:6px 8px;font-size:10px;color:#71839e;border-color:#e0e7f2}#log-body{padding:0 12px 12px;min-height:0;overflow:hidden}#log-list{height:235px;max-height:calc(100vh - 190px);overflow:auto;border:1px solid #e0e8f5;border-radius:10px;background:#fff;padding:9px 10px;color:#5b7195;font-size:11px;line-height:1.9;scrollbar-width:thin;margin:0}#log-body small{font-size:9px;margin-top:7px}
 /* 胡桃主题：梅花、蝶影与暖金描边，保持正文易读。 */
 :host{--accent:#8d3048;--line:#eadce0;--muted:#917982;color:#473640}section{background:#fcf6f4;border-color:#e7cbd0;box-shadow:0 20px 65px #49202d28,0 3px 12px #49202d12}header{background:linear-gradient(105deg,#fff9f6 0%,#f8e8e9 72%,#efd5d6 100%);border-bottom:1px solid #e7cbd0}.brand-mark{position:relative;background:linear-gradient(140deg,#7d253d,#aa4351);box-shadow:0 5px 12px #70243d40;color:#ffe9bd}.brand-mark::after{content:'✿';position:absolute;right:-6px;top:-8px;color:#d9a160;font-size:16px;text-shadow:0 1px 2px #fff}.brand-copy strong{color:#643044}.brand-copy span,.caption{color:#9b6975}.current-banner{background:#fff9f6;border-color:#ead6d7}#current-task,#timer-summary{background:#faeceb;color:#79384d}.card{border-color:#eedfe0;background:#fffcfa}.card-heading strong{color:#76394d}.task-row.current{border-color:#af6875;background:#faeeed;color:#7c3448;box-shadow:inset 3px 0 #9a4257}.dot.current{background:#9a4257}.timer-link{background:#faedec;color:#833d50;border-color:#e9cbcf}.timer-mark{background:#f7e6e4;color:#92445b}#submit-course,#auto-start{background:#8d3048;border-color:#8d3048;box-shadow:0 4px 10px #8d304830}#submit-course:hover:not(:disabled),#auto-start:hover:not(:disabled){background:#75253d;border-color:#75253d}#fill-course{color:#833e52;background:#fff5f3;border-color:#efd6da}.timer-stat strong,#timer-phase{color:#8d3048}#log-list{background:#fffaf8;color:#674e58;border-color:#eddce0}#log-export{color:#81394c;background:#fff5ee;border-color:#e8d1c7}button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline-color:#a0486266}.panel-foot::before{content:'✿  ';color:#b96b79}
 #update-banner{padding:10px 14px;background:#fff2dc;border-bottom:1px solid #e8c59a;color:#714634}#update-banner strong{display:block;font-size:12px}#update-banner p{margin:3px 0 7px;font-size:11px}#update-banner div{display:flex;gap:8px}#update-banner button{font-size:11px;padding:5px 10px}#update-now{background:#8d3048;color:#fff;border-color:#8d3048}
 .idle-confirm-option{display:flex;align-items:center;gap:8px;padding:9px 12px;margin-bottom:9px;background:#fffaf5;border:1px solid var(--line);border-radius:10px;cursor:pointer}.idle-confirm-option input{accent-color:#8d3048;width:15px;height:15px;flex-shrink:0}
+#account-banner{margin:0 0 8px;padding:8px 11px;border:1px solid #ead2d5;border-radius:9px;background:#fff8f6;color:#783b4e;font-size:12px;font-weight:650;overflow-wrap:anywhere}.account-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}.account-actions button{font-size:10px;padding:6px 9px;color:#804151;background:#fff7f5}.jump-check-actions{display:grid;grid-template-columns:1fr 1fr 70px;gap:6px;margin-top:9px}.jump-check-actions button{padding:8px 4px;font-size:11px}.jump-check-actions #jump-check-stop{color:#ad5263;background:#fff4f5}#jump-check-results{max-height:185px;overflow:auto;margin-top:9px;padding:8px 10px;background:#fff8f5;border:1px solid #eedfe0;border-radius:9px;font-size:11px;line-height:1.7}#jump-check-results:empty{display:none}
 </style>
 <section aria-label="U校园答案搬运助手">
 <header><div class="brand-mark">U</div><div class="brand-copy"><span>✿ 胡桃的学习手记 · U校园</span><strong>答案搬运助手 <b class="version">v${SCRIPT_VERSION}</b></strong></div><button id="toggle" title="收起或展开助手">收起</button></header>
 <div id="update-banner" role="status" hidden><strong id="update-title">发现新版本</strong><p>阿里云已发布新版脚本。更新由 Tampermonkey 确认安装。</p><div><button id="update-now">前往更新</button><button id="update-later">稍后</button></div></div>
-<div class="current-banner"><small id="current-task">当前题：识别中</small></div>
+<div class="current-banner"><div id="account-banner" role="status">当前登录账号：正在识别学校和学号…</div><small id="current-task">当前题：识别中</small></div>
 <div id="body">
 <div class="card">
 <div class="card-heading"><strong>我的教材</strong><span class="caption">练习目录</span></div>
 <select id="task" hidden aria-hidden="true" tabindex="-1"></select>
-<div class="toolbar"><button id="read-books">读取首页书架</button><button id="sync-records">同步本页旧记录</button></div>
-<small id="data-note"></small><small id="books-note" hidden>无答案的教材显示（0/0）。</small>
+<div class="toolbar"><button id="read-books">读取首页书架</button><button id="sync-records">同步跨页面记录</button></div>
+<small id="data-note"></small><small id="account-note">账号识别中；提交标记暂不显示。</small><div class="account-actions"><button id="refresh-account" type="button">重新核对账号</button><button id="claim-legacy" type="button" disabled>认领旧版提交记录</button></div><small>旧版标绿需认领；「同步跨页面记录」只同步数据，不会自动指定账号。</small><small id="books-note" hidden>无答案的教材显示（0/0）。</small>
 <div id="task-tree" aria-label="按教材和单元分类的练习目录"></div>
 <div class="legend"><span><i class="dot pending"></i>有答案 · 未交</span><span><i class="dot done"></i>已提交</span><span><i class="dot current"></i>当前题</span></div>
 <small>单元进度为（已做/已收录），点击练习可跳转。</small>
+<div class="jump-check-actions"><button id="jump-check-unit">检查当前单元</button><button id="jump-check-book">检查整本教材</button><button id="jump-check-stop" disabled>停止</button></div>
+<small>逐题打开并核对是否到达目标练习；只跳转，不填写或提交。检查期间请保持课本页打开。</small><pre id="jump-check-results" role="status" aria-live="polite"></pre>
 </div>
 <details class="card" id="answer-view" open><summary>所选练习答案 <span class="answer-title">按顺序查看 · 可复制</span></summary><small id="answer-path"></small><textarea id="answer-display" readonly aria-label="所选练习答案"></textarea></details>
 <div class="card"><div class="card-heading"><strong>练习操作</strong><span class="caption">选择后执行</span></div>
@@ -1690,6 +1746,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   let checkedText = null;
   let busy = false;
   var autoState = { running: false, cancelled: false };
+  let jumpCheckState = { running: false, cancelled: false };
   let shelfScanAt = 0;
   function visible(element) {
     const style = getComputedStyle(element);
@@ -2206,15 +2263,89 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     }
     throw new Error('答案已填写，已点击提交' + (confirmed ? '并确认' : '') + '，但尚未检测到答题小结；没有标绿。请查看页面是否仍有提示。');
   }
-  const SUBMITTED_KEY = 'ucampus-submitted-tasks';
+  const SUBMITTED_KEY = 'ucampus-submitted-tasks'; // 0.4.6 及更早版本的待认领记录
+  const SUBMITTED_BY_ACCOUNT = 'ucampus-submitted-tasks/v2/';
+  const LEGACY_OWNER_KEY = 'ucampus-submitted-legacy-owner/v1';
+  let accountIdentity = null;
+  const accountSubmittedKey = () => accountIdentity ? SUBMITTED_BY_ACCOUNT + accountIdentity.key : '';
   const PANEL_KEY = 'ucampus-panel-pos';
   const TIMER_PANEL_KEY = 'ucampus-auto-panel-pos/v1';
   const TIMER_COLLAPSED_KEY = 'ucampus-auto-panel-collapsed/v1';
   const LOG_PANEL_KEY = 'ucampus-log-panel-pos/v1';
   const LOG_VISIBLE_KEY = 'ucampus-log-visible/v1';
   function readSubmitted() {
-    const data = sharedRead(SUBMITTED_KEY, []);
-    return new Set(Array.isArray(data) ? data.filter(item => typeof item === 'string') : []);
+    const key = accountSubmittedKey();
+    if (!key) return new Set();
+    const data = sharedRead(key, []);
+    const done = new Set(Array.isArray(data) ? data.filter(item => typeof item === 'string') : []);
+    // 当播放器先只认出网站账号编号、后来首页补全学校与学号时，把同一账号的临时记录并入正式记录区。
+    if (accountIdentity.student && accountIdentity.appUserId) {
+      const alias = SUBMITTED_BY_ACCOUNT + 'site-id/' + encodeURIComponent(accountIdentity.schId || '') + '/' + encodeURIComponent(accountIdentity.appUserId);
+      if (alias !== key) {
+        const previous = sharedRead(alias, []);
+        if (Array.isArray(previous) && previous.some(item => !done.has(item))) {
+          for (const item of previous) done.add(item);
+          try { sharedWrite(key, [...done]); } catch { /* 存储故障时本页仍展示匹配到的记录 */ }
+        }
+      }
+    }
+    return done;
+  }
+  function setAccountIdentity(next) {
+    const previous = accountIdentity?.key || '';
+    if (previous === (next?.key || '')) return;
+    if (autoState.running) autoState.cancelled = true;
+    if (jumpCheckState.running) jumpCheckState.cancelled = true;
+    accountIdentity = next;
+    storedDataSignature = '';
+    paintTaskOptions(readSubmitted());
+    markAnsweredCatalog();
+    status(next ? '已识别账号，提交记录已切换到当前账号。' : '账号身份未确认；提交标记暂不显示。');
+  }
+  const ACCOUNT_SNAPSHOT_KEY = 'ucampus-account-from-home/v1';
+  function accountOnHome() {
+    let state = {};
+    try { state = JSON.parse(localStorage.getItem('PORTAL_STATE_PERSISTENT') || '{}') || {}; } catch {}
+    const stored = accountFromHomeState(state);
+    const schools = [...document.querySelectorAll('[class*="UserPanel_cardSchool__"]')].filter(visible);
+    const roles = [...document.querySelectorAll('[class*="UserPanel_roleId__"]')].filter(visible);
+    const shown = schools.length === 1 && roles.length === 1
+      ? accountFromHomeFields(schools[0].innerText || schools[0].textContent, roles[0].innerText || roles[0].textContent, state) : null;
+    if (stored && shown && stored.key !== shown.key) return null;
+    return shown || stored;
+  }
+  function lastHomeAccount() {
+    const saved = sharedRead(ACCOUNT_SNAPSHOT_KEY, null);
+    if (!saved || !accountRecord(saved.school, saved.student) || saved.key !== accountRecord(saved.school, saved.student).key) return null;
+    return saved;
+  }
+  let accountRefreshPromise = null;
+  async function refreshAccountIdentity() {
+    if (accountRefreshPromise) return accountRefreshPromise;
+    accountRefreshPromise = (async () => {
+      let next = null;
+      if (window.location.hostname === 'ucontent.unipus.cn') {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        try {
+          const response = await fetch('/auth/api/user', { credentials: 'same-origin', redirect: 'manual', signal: controller.signal });
+          if (response.ok) next = accountFromPlayer(await response.json(), lastHomeAccount());
+        } catch { /* 登录接口不可用时，不按旧缓存猜账号。 */ }
+        finally { clearTimeout(timeout); }
+      } else {
+        next = accountOnHome();
+        if (next && JSON.stringify(lastHomeAccount()) !== JSON.stringify(next)) { try { sharedWrite(ACCOUNT_SNAPSHOT_KEY, next); } catch {} }
+      }
+      setAccountIdentity(next);
+      return next;
+    })();
+    try { return await accountRefreshPromise; }
+    finally { accountRefreshPromise = null; }
+  }
+  async function requireAccountIdentity() {
+    const next = await refreshAccountIdentity();
+    if (!next) throw new Error('无法核对当前学校和学号。请先打开 U校园首页，确认个人资料显示，再返回课本页刷新。');
+    return next.key;
   }
   function readTaskRoutes() {
     try {
@@ -2360,11 +2491,13 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     updateDataNote(done);
   }
   function rememberSubmitted(task) {
+    const accountKey = accountSubmittedKey();
+    if (!accountKey) return false;
     const key = taskKey(task.path, task.book);
     try {
       const done = readSubmitted();
       done.add(key);
-      sharedWrite(SUBMITTED_KEY, [...done]);
+      sharedWrite(accountKey, [...done]);
     } catch {
       return false;
     }
@@ -2782,6 +2915,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     const start = Date.now();
     while (Date.now() - start <= timeout) {
       if (typeof autoState !== 'undefined' && autoState?.running && autoState.cancelled) throw new Error('定时任务已停止。');
+      if (jumpCheckState.running && jumpCheckState.cancelled) throw new Error('跳转检查已停止。');
       const value = read();
       if (value) return value;
       await new Promise(resolve => setTimeout(resolve, 150));
@@ -2795,6 +2929,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     const want = taskBodyPath(task.path).map(routeLabel).filter(Boolean);
     let covered = [];
     for (let step = 0; step < 8 && covered.length < want.length; step++) {
+      if (jumpCheckState.running && jumpCheckState.cancelled) throw new Error('跳转检查已停止。');
       let entries = menuRows().filter(entry => unitCompatible(entry.path, task.path));
       let menu = nextMenuJump(entries.map(entry => ({ path: entry.path, clickable: true })), task.path, covered.length);
       if (!menu && !covered.length) {
@@ -2858,6 +2993,49 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     }, 7000);
     if (!confirmed) throw new Error('目录已点击，但实际题目尚未核对为目标练习，没有填写或提交。');
     return `已打开：${original.path.join(' / ')}。还没有填写。`;
+  }
+  async function checkTaskJumps(scope) {
+    if (!catalogMenus().length || isShelfPage()) throw new Error('请先打开具体教材的课本播放器，再检查跳转。');
+    const book = activeBook();
+    const unit = scope === 'unit' ? pageCurrentUnit() : 0;
+    if (scope === 'unit' && !unit) throw new Error('无法唯一识别当前单元，请在课本目录打开该单元的一道练习后重试。');
+    const tasks = COURSE_TASKS.filter(task => taskBook(task) === book && (scope === 'book' || (isUnitToken(task.path[0]) ? Number(unitNumberFrom(task.path[0])) : 1) === unit));
+    if (!tasks.length) throw new Error('当前范围没有已收录的练习。');
+    const lines = [], result = ui('jump-check-results');
+    let passed = 0, failed = 0;
+    jumpCheckState = { running: true, cancelled: false };
+    ui('jump-check-unit').disabled = true;
+    ui('jump-check-book').disabled = true;
+    ui('jump-check-stop').disabled = false;
+    result.textContent = `准备检查 ${tasks.length} 道练习……`;
+    try {
+      for (let i = 0; i < tasks.length && !jumpCheckState.cancelled; i++) {
+        const task = tasks[i];
+        const name = task.path.join(' / ');
+        result.textContent = `正在检查 ${i + 1}/${tasks.length}：${name}\n` + lines.join('\n');
+        try {
+          await jumpToTask(task);
+          if (jumpCheckState.cancelled) break;
+          passed++;
+          lines.push('✓ ' + name);
+        } catch (error) {
+          if (jumpCheckState.cancelled) break;
+          failed++;
+          lines.push('✗ ' + name + '：' + (error.message || String(error)));
+        }
+        result.textContent = `已检查 ${passed + failed}/${tasks.length}，成功 ${passed}，失败 ${failed}\n` + lines.join('\n');
+        result.scrollTop = result.scrollHeight;
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+      const summary = (jumpCheckState.cancelled ? '跳转检查已停止' : '跳转检查完成') + `：${passed + failed}/${tasks.length} 道，成功 ${passed}，失败 ${failed}。`;
+      result.textContent = summary + '\n' + lines.join('\n');
+      status(summary + (failed ? ' 失败原因见教材目录下的检查记录。' : ''));
+    } finally {
+      jumpCheckState.running = false;
+      ui('jump-check-unit').disabled = false;
+      ui('jump-check-book').disabled = false;
+      ui('jump-check-stop').disabled = true;
+    }
   }
   function taskMatches(task, base, name) {
     const path = alignedMenuPath([...base, name], task.path);
@@ -2936,11 +3114,13 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     ui('auto-preview').textContent = minutes > 0 && count > 0 ? minutes + '分钟做' + count + '道练习，平均每道 ' + (minutes * 60 / count).toFixed(1) + ' 秒；先填，到时间再提交。' : '请输入总分钟数和练习数。';
   }
   function assertAutoContext(task) {
+    if (!accountIdentity || accountIdentity.key !== autoState.accountKey) throw new Error('账号身份已变化，定时任务已停止。');
     if (taskBook(task) !== activeBook()) throw new Error('当前网页教材与任务教材不同，已停止。请先从首页打开对应教材。');
     const hits = currentTaskHits();
     if (hits.length !== 1 || taskKey(hits[0].path, hits[0].book) !== taskKey(task.path, task.book)) throw new Error('网页已离开计划中的练习，已停止，没有提交其他题。');
   }
   async function startTimedTask() {
+    const expectedAccountKey = await requireAccountIdentity();
     if (!catalogMenus().length || isShelfPage()) throw new Error('请先打开具体课本练习页，再启动定时任务。');
     const selected = selectedTask();
     if (taskBook(selected) !== activeBook()) throw new Error('请先打开所选教材，不会跨书填写。');
@@ -2948,7 +3128,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     const targetCount = Number(ui('auto-count').value);
     const minutes = Number(ui('auto-minutes').value);
     if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 1440 || minutes * 60000 / targetCount < 1000) throw new Error('分钟数应大于0且不超过1440，平均每道至少1秒。');
-    autoState = { running: true, cancelled: false, skipped: [], startedAt: Date.now(), completed: 0, targetCount, phase: 'jumping' };
+    autoState = { running: true, cancelled: false, accountKey: expectedAccountKey, skipped: [], startedAt: Date.now(), completed: 0, targetCount, phase: 'jumping' };
     autoState.clockTimer = setInterval(updateTimerMetrics, 1000);
     updateTimerMetrics();
     ui('auto-skipped').textContent = '';
@@ -2976,9 +3156,11 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
             await new Promise(resolve => setTimeout(resolve, Math.min(1000, Math.max(1, deadline - Date.now()))));
           }
         },
-        verify: async task => assertAutoContext(task),
+        verify: async task => { await requireAccountIdentity(); assertAutoContext(task); },
         submit: async () => { await clickSubmit(status, () => autoState.cancelled); },
-        remember: task => rememberSubmitted(task)
+        remember: task => {
+          if (accountIdentity?.key !== expectedAccountKey || !rememberSubmitted(task)) throw new Error('提交已完成，但当前账号标记未能保存；已停止后续任务。');
+        }
       });
       autoState.phase = 'completed';
       status('定时任务完成，已确认提交 ' + completed + '/' + targetCount + ' 道练习；跳过 ' + autoState.skipped.length + ' 道跳转失败的练习，详情见跳过记录。');
@@ -2996,8 +3178,35 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     const matched = COURSE_TASKS.filter(task => done.has(taskKey(task.path, task.book))).length;
     const text = '本地已确认提交：' + matched + '道；教程3已收录Unit 1—6（部分分组题待核实）。';
     if (ui('data-note').textContent !== text) ui('data-note').textContent = text;
+    const legacy = sharedRead(SUBMITTED_KEY, []);
+    const owner = sharedRead(LEGACY_OWNER_KEY, null)?.key || '';
+    const unclaimed = Array.isArray(legacy) ? legacy.filter(key => !done.has(key)).length : 0;
+    ui('account-banner').textContent = accountIdentity
+      ? '当前登录：' + accountIdentity.school + '｜' + (accountIdentity.student ? '学号 ' + accountIdentity.student : '账号编号 ' + accountIdentity.appUserId)
+      : '当前登录账号：学校和学号尚未识别';
+    ui('account-note').textContent = accountIdentity
+      ? '提交记录按当前账号隔离。' + (owner && owner !== accountIdentity.key ? '旧版记录已归属其他账号。' : unclaimed ? '另有 ' + unclaimed + ' 条旧版记录待认领。' : '')
+      : '账号尚未识别；旧版记录仍在本机，识别后可认领，当前不显示标绿。';
+    ui('claim-legacy').disabled = !accountIdentity || !unclaimed || !!owner && owner !== accountIdentity.key;
+    ui('claim-legacy').textContent = unclaimed ? '认领旧版提交记录（' + unclaimed + '条）' : '没有待认领的旧记录';
     return matched;
   }
+  ui('claim-legacy').onclick = run(async () => {
+    await requireAccountIdentity();
+    if (!accountIdentity) throw new Error('尚未确认账号，不能认领旧记录。');
+    const owner = sharedRead(LEGACY_OWNER_KEY, null)?.key || '';
+    if (owner && owner !== accountIdentity.key) throw new Error('旧版记录已归属另一个账号。');
+    const old = sharedRead(SUBMITTED_KEY, []);
+    if (!Array.isArray(old) || !old.length) throw new Error('没有可认领的旧版记录。');
+    if (!window.confirm('旧版记录没有账号信息，可能包含多个账号的标记。确定将这些标记归到当前账号吗？')) return;
+    const done = readSubmitted();
+    for (const key of old) done.add(key);
+    sharedWrite(accountSubmittedKey(), [...done]);
+    sharedWrite(LEGACY_OWNER_KEY, { key: accountIdentity.key });
+    paintTaskOptions(done);
+    markAnsweredCatalog();
+    status('已将 ' + old.length + ' 条旧版标记归到当前账号。请核对绿色进度。');
+  });
   let storedLibrarySignature = '', storedDataSignature = '';
   function syncStoredData(announce = false) {
     if (busy && !announce) return; // 下次定时刷新或focus继续读，不丢失远端更新。
@@ -3009,7 +3218,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
       refreshTaskList();
     }
     const done = readSubmitted();
-    const dataSignature = JSON.stringify([signature, [...done], ownedBooks()]);
+    const dataSignature = JSON.stringify([signature, accountSubmittedKey(), [...done], ownedBooks()]);
     if (dataSignature !== storedDataSignature || announce) {
       storedDataSignature = dataSignature;
       paintTaskOptions(done);
@@ -3031,6 +3240,13 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   setInterval(() => { if (!document.hidden) { try { syncStoredData(); } catch {} } }, 30000);
   ui('sync-records').onclick = run(() => syncStoredData(true));
   try { syncStoredData(); } catch (error) { status('旧数据同步失败：' + error.message); }
+  void refreshAccountIdentity();
+  setInterval(() => { if (!document.hidden) void refreshAccountIdentity(); }, window.location.hostname === 'ucontent.unipus.cn' ? 30000 : 5000);
+  window.addEventListener('focus', () => { void refreshAccountIdentity(); });
+  ui('refresh-account').onclick = run(async () => {
+    const identity = await refreshAccountIdentity();
+    status(identity ? '当前账号：' + identity.label + '；提交记录已按账号隔离。' : '没有确认学校与学号。请先打开首页显示个人资料，再返回课本页重试。');
+  });
   ui('read-books').onclick = run(async () => readShelf());
   ui('auto-minutes').oninput = autoProgressPreview; ui('auto-count').oninput = autoProgressPreview;
   ui('auto-start').onclick = run(async () => {
@@ -3050,6 +3266,9 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   ui('detect').onclick = run(async () => detectTask());
   const jumpErrorOptions = { alertOnError: true, actionName: '跳转', errorHint: '请查看当前网页及上面的失败原因。可手动打开对应练习后，点“记住当前页位置”，再尝试跳转。' };
   ui('jump').onclick = run(async () => { status(await jumpToTask(selectedTask())); }, jumpErrorOptions);
+  ui('jump-check-unit').onclick = run(() => checkTaskJumps('unit'));
+  ui('jump-check-book').onclick = run(() => checkTaskJumps('book'));
+  ui('jump-check-stop').onclick = () => { if (jumpCheckState.running) { jumpCheckState.cancelled = true; ui('jump-check-results').textContent = '正在停止跳转检查……\n' + ui('jump-check-results').textContent; } };
   ui('bind-route').onclick = run(async () => { status(saveCurrentTaskRoute(selectedTask())); });
   ui('task').onchange = run(async () => {
     paintTaskOptions();
@@ -3057,20 +3276,23 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   }, jumpErrorOptions);
   ui('fill-course').onclick = run(async () => { status(await fillCourseTask(selectedTask())); });
   ui('submit-course').onclick = run(async () => {
+    const accountKey = await requireAccountIdentity();
     const task = selectedTask();
     const filled = await fillCourseTask(task);
+    if (await requireAccountIdentity() !== accountKey) throw new Error('账号已切换，停止提交。');
     status(filled + "\n正在提交……");
     const submitted = await clickSubmit(message => status(filled + "\n" + message));
-    const remembered = rememberSubmitted(task);
+    const remembered = accountIdentity?.key === accountKey && rememberSubmitted(task);
     status(`${filled}\n${submitted}${remembered ? '\n这道题已记住，目录里标成绿色。' : '\n提交了，但这台浏览器没有记住。'}`);
   }, { alertOnError: true, actionName: '填写并提交' });
   ui('submit-only').onclick = run(async () => {
     // 只提交网页现有答案；不调用填写函数，也不依赖列表当前选项。
+    const accountKey = await requireAccountIdentity();
     const hits = currentTaskHits();
     const task = hits.length === 1 ? hits[0] : null;
     status('保留网页现有答案，正在提交……');
     const submitted = await clickSubmit(status);
-    const remembered = task ? rememberSubmitted(task) : false;
+    const remembered = task && accountIdentity?.key === accountKey ? rememberSubmitted(task) : false;
     status(submitted + (remembered ? '\n当前实际练习已标绿。' : task ? '\n提交已确认，但本浏览器未记住标记。' : '\n当前练习未唯一识别，没有更改任何题的标记。'));
   }, { alertOnError: true, actionName: '仅提交' });
 })();
