@@ -2,9 +2,9 @@
 
 油猴脚本。只填写已经整理好的答案，不猜空着的题，也不自动解题。
 
-当前版本 **0.3.8**。安装或更新：
+当前版本 **0.3.9**。安装或更新从自己的服务器拉取：
 
-https://raw.githubusercontent.com/keonxyz5223-beep/ucampus-answer-transfer/main/ucampus-answer-transfer.user.js
+https://study.keon5223.xyz/ucampus/ucampus-answer-transfer.user.js
 
 篡改猴打开上面的链接后安装。已装过的，在脚本主窗口点「检查更新」。发现新版本会打开安装页，点更新即可，不要选「重新安装」。更新不会清掉已导入的答案和本地提交记录。
 

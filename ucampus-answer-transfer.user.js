@@ -1,16 +1,16 @@
 // ==UserScript==
 // @name         U校园 · 我的答案搬运助手
 // @namespace    local.ucampus.answer-transfer
-// @version      0.3.8
+// @version      0.3.9
 // @description  按本人整理的答案填写当前练习，并点击页面上的提交节点。只填已给出的答案。
 // @match        https://uai.unipus.cn/*
 // @match        https://ucontent.unipus.cn/*
 // @match        https://ucloud.unipus.cn/*
-// @updateURL    https://raw.githubusercontent.com/keonxyz5223-beep/ucampus-answer-transfer/main/ucampus-answer-transfer.user.js
-// @downloadURL  https://raw.githubusercontent.com/keonxyz5223-beep/ucampus-answer-transfer/main/ucampus-answer-transfer.user.js
+// @updateURL    https://study.keon5223.xyz/ucampus/ucampus-answer-transfer.user.js
+// @downloadURL  https://study.keon5223.xyz/ucampus/ucampus-answer-transfer.user.js
 // @run-at       document-idle
 // @sandbox      raw
-// @connect      raw.githubusercontent.com
+// @connect      study.keon5223.xyz
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_addValueChangeListener
@@ -20,8 +20,8 @@
 
 (() => {
   'use strict';
-  const SCRIPT_VERSION = '0.3.8';
-  const UPDATE_URL = 'https://raw.githubusercontent.com/keonxyz5223-beep/ucampus-answer-transfer/main/ucampus-answer-transfer.user.js';
+  const SCRIPT_VERSION = '0.3.9';
+  const UPDATE_URL = 'https://study.keon5223.xyz/ucampus/ucampus-answer-transfer.user.js';
   const normalize = value => String(value ?? '').normalize('NFKC').replace(/\s+/g, ' ').trim();
   function fingerprint(value) {
     let hash = 2166136261;
@@ -970,7 +970,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 .window-links{display:grid;grid-template-columns:1fr 1fr;gap:8px}.log-window{position:fixed;right:784px;top:32px;width:340px;max-height:360px;z-index:2147483646}.log-window header{padding:13px;gap:8px}.log-window .brand-copy strong{font-size:15px}#log-clear,#log-close{padding:6px 8px;font-size:10px;color:#71839e;border-color:#e0e7f2}#log-body{padding:0 12px 12px;min-height:0;overflow:hidden}#log-list{height:235px;max-height:calc(100vh - 190px);overflow:auto;border:1px solid #e0e8f5;border-radius:10px;background:#fff;padding:9px 10px;color:#5b7195;font-size:11px;line-height:1.9;scrollbar-width:thin;margin:0}#log-body small{font-size:9px;margin-top:7px}
 </style>
 <section aria-label="U校园答案搬运助手">
-<header><div class="brand-mark">U</div><div class="brand-copy"><span>U校园 · 学习工具</span><strong>答案搬运助手 <b class="version">v0.3.8</b></strong></div><button id="toggle" title="收起或展开助手">收起</button></header>
+<header><div class="brand-mark">U</div><div class="brand-copy"><span>U校园 · 学习工具</span><strong>答案搬运助手 <b class="version">v0.3.9</b></strong></div><button id="toggle" title="收起或展开助手">收起</button></header>
 <div class="current-banner"><small id="current-task">当前题：识别中</small></div>
 <div id="body">
 <div class="card">
@@ -1932,7 +1932,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
         timeout: 15000,
         onload: response => {
           if (response.status !== 200) {
-            reject(new Error('检查更新失败，HTTP ' + response.status + '。仓库需保持公开，否则 GitHub 不提供这个文件。'));
+            reject(new Error('检查更新失败，HTTP ' + response.status + '。请确认 study.keon5223.xyz 能打开脚本文件。'));
             return;
           }
           const match = String(response.responseText || '').match(/^\/\/\s*@version\s+(\S+)/m);
@@ -1956,7 +1956,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     });
   }
   ui('check-update').onclick = run(async () => {
-    status('正在检查 GitHub 上的脚本版本……');
+    status('正在检查服务器上的脚本版本……');
     status(await checkScriptUpdate());
   }, { alertOnError: true, actionName: '检查更新' });
   ui('show-timer').onclick = () => {
