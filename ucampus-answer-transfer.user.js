@@ -1,16 +1,17 @@
 // ==UserScript==
 // @name         U校园 · 我的答案搬运助手
 // @namespace    local.ucampus.answer-transfer
-// @version      0.3.9
+// @version      0.4.0
 // @description  按本人整理的答案填写当前练习，并点击页面上的提交节点。只填已给出的答案。
 // @match        https://uai.unipus.cn/*
 // @match        https://ucontent.unipus.cn/*
 // @match        https://ucloud.unipus.cn/*
-// @updateURL    https://study.keon5223.xyz/ucampus/ucampus-answer-transfer.user.js
-// @downloadURL  https://study.keon5223.xyz/ucampus/ucampus-answer-transfer.user.js
+// @updateURL    https://dl.keon5223.xyz/ucampus-answer-transfer.user.js
+// @downloadURL  https://dl.keon5223.xyz/ucampus-answer-transfer.user.js
 // @run-at       document-idle
 // @sandbox      raw
-// @connect      study.keon5223.xyz
+// @connect      dl.keon5223.xyz
+// @connect      raw.githubusercontent.com
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_addValueChangeListener
@@ -20,8 +21,12 @@
 
 (() => {
   'use strict';
-  const SCRIPT_VERSION = '0.3.9';
-  const UPDATE_URL = 'https://study.keon5223.xyz/ucampus/ucampus-answer-transfer.user.js';
+  const SCRIPT_VERSION = '0.4.0';
+  const UPDATE_ROUTES = {
+    server: 'https://dl.keon5223.xyz/ucampus-answer-transfer.user.js',
+    github: 'https://raw.githubusercontent.com/keonxyz5223-beep/ucampus-answer-transfer/main/ucampus-answer-transfer.user.js'
+  };
+  const UPDATE_ROUTE_KEY = 'ucampus-update-route/v1';
   const normalize = value => String(value ?? '').normalize('NFKC').replace(/\s+/g, ' ').trim();
   function fingerprint(value) {
     let hash = 2166136261;
@@ -965,12 +970,12 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 .status-card{padding:11px 12px;background:#edf2fc;border:1px solid #dfe7f5;border-radius:11px}.status-label{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:650;letter-spacing:.5px;color:#8293ae}.status-label::before{content:'';width:5px;height:5px;background:#6e8ad1;border-radius:50%}pre{white-space:pre-wrap;overflow:auto;overflow-wrap:anywhere;font:11px/1.8 'Segoe UI','Microsoft YaHei',sans-serif;font-family:inherit;max-height:145px;margin:5px 0 0;color:#536d96}#status[data-state=error]{color:#b15a61}#status[data-state=success]{color:#38795c}.panel-foot{text-align:center;font-size:9px;letter-spacing:.5px;color:#a3aec0;margin:10px 0 0}
 @media(max-width:480px){:host{right:12px;top:16px}section{max-height:calc(100vh - 32px)}header{padding:13px 14px}#body{padding:10px}}
 
-.timer-window{position:fixed;right:448px;top:32px;width:320px;z-index:2147483646}.timer-window header{padding:14px;gap:9px}.timer-window .brand-copy strong{font-size:15px}.timer-mark{width:34px;height:34px;display:grid;place-items:center;border-radius:11px;background:#eaf0ff;color:#4167dc;font-size:25px;font-weight:650}.timer-window .current-banner{padding:0 14px 12px}#timer-summary{background:#edf2ff;color:#4c68a7;font-size:10px;padding:8px 10px;border-radius:8px;margin:0;max-height:52px;overflow:hidden;overflow-wrap:anywhere}#timer-start-path{margin:0;font-size:10px;overflow-wrap:anywhere;color:#7085a5}#timer-stop-quick{padding:6px 9px;color:#bb5963;background:#fff4f5;border-color:#f1d9dd;font-size:11px}#timer-body{padding:12px}.timer-window #auto-scope{font-size:11px}.timer-window #timer-status[data-state=error]{color:#b15a61}.timer-window #timer-status[data-state=success]{color:#38795c}.timer-link{display:block;width:100%;margin:0 0 11px;padding:10px;background:#edf2ff;border-color:#d9e2fc;color:#4666c7}
+.timer-window{position:fixed;right:448px;top:32px;width:320px;z-index:2147483646}.timer-window header{padding:14px;gap:9px}.timer-window .brand-copy strong{font-size:15px}.timer-mark{width:34px;height:34px;display:grid;place-items:center;border-radius:11px;background:#eaf0ff;color:#4167dc;font-size:25px;font-weight:650}.timer-window .current-banner{padding:0 14px 12px}#timer-summary{background:#edf2ff;color:#4c68a7;font-size:10px;padding:8px 10px;border-radius:8px;margin:0;max-height:52px;overflow:hidden;overflow-wrap:anywhere}#timer-start-path{margin:0;font-size:10px;overflow-wrap:anywhere;color:#7085a5}#timer-stop-quick{padding:6px 9px;color:#bb5963;background:#fff4f5;border-color:#f1d9dd;font-size:11px}#timer-body{padding:12px}.timer-window #auto-scope{font-size:11px}.timer-window #timer-status[data-state=error]{color:#b15a61}.timer-window #timer-status[data-state=success]{color:#38795c}.timer-link{display:block;width:100%;margin:0 0 11px;padding:10px;background:#edf2ff;border-color:#d9e2fc;color:#4666c7}.update-route{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 8px;font-size:11px;color:#70829b}.update-route select{flex:1;border:1px solid #dce4f0;border-radius:8px;background:#fff;padding:7px 8px;font:inherit;color:#31435f}
 .timer-metrics{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px}.timer-stat{border:1px solid #dfe7f7;background:#fff;border-radius:12px;padding:10px 12px}.timer-stat small{margin:0;font-size:10px;color:#8594aa}.timer-stat strong{display:block;margin-top:4px;font-size:23px;font-weight:650;line-height:1.3;color:#3b60c7;font-variant-numeric:tabular-nums}#timer-remaining{font-size:21px}.timer-progress-line{display:flex;justify-content:space-between;gap:8px;font-size:10px;margin:0 2px 12px;color:#7a8fac}#timer-phase{color:#4869c1}#timer-task{margin:0;color:#5b7298;font-size:11px;line-height:1.8;overflow-wrap:anywhere}
 .window-links{display:grid;grid-template-columns:1fr 1fr;gap:8px}.log-window{position:fixed;right:784px;top:32px;width:340px;max-height:360px;z-index:2147483646}.log-window header{padding:13px;gap:8px}.log-window .brand-copy strong{font-size:15px}#log-clear,#log-close{padding:6px 8px;font-size:10px;color:#71839e;border-color:#e0e7f2}#log-body{padding:0 12px 12px;min-height:0;overflow:hidden}#log-list{height:235px;max-height:calc(100vh - 190px);overflow:auto;border:1px solid #e0e8f5;border-radius:10px;background:#fff;padding:9px 10px;color:#5b7195;font-size:11px;line-height:1.9;scrollbar-width:thin;margin:0}#log-body small{font-size:9px;margin-top:7px}
 </style>
 <section aria-label="U校园答案搬运助手">
-<header><div class="brand-mark">U</div><div class="brand-copy"><span>U校园 · 学习工具</span><strong>答案搬运助手 <b class="version">v0.3.9</b></strong></div><button id="toggle" title="收起或展开助手">收起</button></header>
+<header><div class="brand-mark">U</div><div class="brand-copy"><span>U校园 · 学习工具</span><strong>答案搬运助手 <b class="version">v0.4.0</b></strong></div><button id="toggle" title="收起或展开助手">收起</button></header>
 <div class="current-banner"><small id="current-task">当前题：识别中</small></div>
 <div id="body">
 <div class="card">
@@ -987,7 +992,8 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 <div class="utility-actions"><button id="jump">跳到这道题</button><button id="detect">识别当前练习</button><button id="bind-route">记住当前页位置</button></div>
 <div class="main-actions"><button id="submit-course">填写并提交</button><button id="fill-course">仅填写答案</button><button id="submit-only" title="提交网页现有答案，不重新填写">仅提交</button></div><small class="hint">手动改好答案后用「仅提交」，保留网页现有内容。</small></div>
 <div class="window-links"><button id="show-timer" class="timer-link">定时答题窗口 ↗</button><button id="toggle-log" class="timer-link">关闭日志窗口</button></div>
-<button id="check-update" class="timer-link">检查更新</button>
+<label class="update-route">更新线路<select id="update-route"><option value="server">阿里云 dl.keon5223.xyz</option><option value="github">GitHub</option></select></label>
+<button id="check-update" class="timer-link">检查所选线路</button>
 <details class="card" id="import-panel"><summary>导入答案与页面工具</summary><small>选择答案 JSON 自动导入，或粘贴后点导入。</small><input id="file" type="file" accept="application/json,.json"><textarea id="answers" placeholder="在此粘贴完整答案 JSON"></textarea><div class="import-actions"><button id="import-course">导入整单元答案</button><button id="preview">核对答案</button><button id="fill" disabled>填写本页答案</button></div><small>导入只保存；同一本书、同一道题的答案会更新。</small>
 <details class="advanced-tools"><summary>页面资料与模板</summary><div class="import-actions"><button id="scan">采集当前练习</button><button id="export">导出页面资料</button><button id="template">导出答案模板</button></div></details></details>
 <div class="status-card"><div class="status-label">运行状态</div><pre id="status" role="status" aria-live="polite">准备就绪。选择一道练习开始。</pre></div><div class="panel-foot">拖动顶部标题可移动窗口</div>
@@ -1920,43 +1926,53 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     }
     return 0;
   }
+  function selectedUpdateRoute() {
+    const route = ui('update-route').value === 'github' ? 'github' : 'server';
+    return { id: route, name: route === 'github' ? 'GitHub' : '阿里云', url: UPDATE_ROUTES[route] };
+  }
   function checkScriptUpdate() {
+    const route = selectedUpdateRoute();
     return new Promise((resolve, reject) => {
       if (typeof GM_xmlhttpRequest !== 'function') {
-        reject(new Error('当前脚本没有联网权限。请先用本地链接更新到 0.3.8，让篡改猴授予新权限。'));
+        reject(new Error('当前脚本没有联网权限。请先更新到 0.4.0，让篡改猴授予新权限。'));
         return;
       }
       GM_xmlhttpRequest({
         method: 'GET',
-        url: UPDATE_URL + '?t=' + Date.now(),
+        url: route.url + '?t=' + Date.now(),
         timeout: 15000,
         onload: response => {
           if (response.status !== 200) {
-            reject(new Error('检查更新失败，HTTP ' + response.status + '。请确认 study.keon5223.xyz 能打开脚本文件。'));
+            reject(new Error(route.name + ' 检查失败，HTTP ' + response.status + '。'));
             return;
           }
           const match = String(response.responseText || '').match(/^\/\/\s*@version\s+(\S+)/m);
           if (!match) {
-            reject(new Error('网上的脚本没有版本号。'));
+            reject(new Error(route.name + ' 上的脚本没有版本号。'));
             return;
           }
           const remote = match[1];
           const diff = compareVersions(remote, SCRIPT_VERSION);
           if (diff > 0) {
-            if (typeof GM_openInTab === 'function') GM_openInTab(UPDATE_URL, { active: true });
-            else window.open(UPDATE_URL, '_blank', 'noopener');
-            resolve('发现新版本 ' + remote + '，已打开更新页。在篡改猴里点更新；如果显示重新安装，先取消。');
+            if (typeof GM_openInTab === 'function') GM_openInTab(route.url, { active: true });
+            else window.open(route.url, '_blank', 'noopener');
+            resolve(route.name + ' 有新版本 ' + remote + '，已打开更新页。在篡改猴里点更新；如果显示重新安装，先取消。');
             return;
           }
-          resolve(diff === 0 ? '已是最新版本 ' + SCRIPT_VERSION + '。' : '本地版本 ' + SCRIPT_VERSION + ' 比网上的 ' + remote + ' 新。');
+          resolve(diff === 0 ? route.name + ' 已是最新版本 ' + SCRIPT_VERSION + '。' : '本地版本 ' + SCRIPT_VERSION + ' 比' + route.name + '的 ' + remote + ' 新。');
         },
-        onerror: () => reject(new Error('连不上 GitHub，请检查网络。')),
-        ontimeout: () => reject(new Error('检查更新超时。'))
+        onerror: () => reject(new Error('连不上' + route.name + '，请检查网络或换一条线路。')),
+        ontimeout: () => reject(new Error(route.name + ' 检查更新超时。'))
       });
     });
   }
+  try {
+    const savedRoute = localStorage.getItem(UPDATE_ROUTE_KEY);
+    if (savedRoute === 'github' || savedRoute === 'server') ui('update-route').value = savedRoute;
+  } catch { /* 线路记不住时用阿里云 */ }
+  ui('update-route').onchange = () => { try { localStorage.setItem(UPDATE_ROUTE_KEY, selectedUpdateRoute().id); } catch { /* 不影响本次检查 */ } };
   ui('check-update').onclick = run(async () => {
-    status('正在检查服务器上的脚本版本……');
+    status('正在检查' + selectedUpdateRoute().name + '上的脚本版本……');
     status(await checkScriptUpdate());
   }, { alertOnError: true, actionName: '检查更新' });
   ui('show-timer').onclick = () => {
