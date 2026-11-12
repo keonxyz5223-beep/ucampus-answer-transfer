@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         U校园 · 我的答案搬运助手
 // @namespace    local.ucampus.answer-transfer
-// @version      0.4.4
+// @version      0.4.5
 // @description  按本人整理的答案填写当前练习，并点击页面上的提交节点。只填已给出的答案。
 // @match        https://uai.unipus.cn/*
 // @match        https://ucontent.unipus.cn/*
@@ -21,7 +21,7 @@
 
 (() => {
   'use strict';
-  const SCRIPT_VERSION = '0.4.4';
+  const SCRIPT_VERSION = '0.4.5';
   const UPDATE_ROUTES = {
     server: 'https://dl.keon5223.xyz/ucampus-answer-transfer.user.js',
     github: 'https://raw.githubusercontent.com/keonxyz5223-beep/ucampus-answer-transfer/main/ucampus-answer-transfer.user.js'
@@ -1534,6 +1534,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 /* 胡桃主题：梅花、蝶影与暖金描边，保持正文易读。 */
 :host{--accent:#8d3048;--line:#eadce0;--muted:#917982;color:#473640}section{background:#fcf6f4;border-color:#e7cbd0;box-shadow:0 20px 65px #49202d28,0 3px 12px #49202d12}header{background:linear-gradient(105deg,#fff9f6 0%,#f8e8e9 72%,#efd5d6 100%);border-bottom:1px solid #e7cbd0}.brand-mark{position:relative;background:linear-gradient(140deg,#7d253d,#aa4351);box-shadow:0 5px 12px #70243d40;color:#ffe9bd}.brand-mark::after{content:'✿';position:absolute;right:-6px;top:-8px;color:#d9a160;font-size:16px;text-shadow:0 1px 2px #fff}.brand-copy strong{color:#643044}.brand-copy span,.caption{color:#9b6975}.current-banner{background:#fff9f6;border-color:#ead6d7}#current-task,#timer-summary{background:#faeceb;color:#79384d}.card{border-color:#eedfe0;background:#fffcfa}.card-heading strong{color:#76394d}.task-row.current{border-color:#af6875;background:#faeeed;color:#7c3448;box-shadow:inset 3px 0 #9a4257}.dot.current{background:#9a4257}.timer-link{background:#faedec;color:#833d50;border-color:#e9cbcf}.timer-mark{background:#f7e6e4;color:#92445b}#submit-course,#auto-start{background:#8d3048;border-color:#8d3048;box-shadow:0 4px 10px #8d304830}#submit-course:hover:not(:disabled),#auto-start:hover:not(:disabled){background:#75253d;border-color:#75253d}#fill-course{color:#833e52;background:#fff5f3;border-color:#efd6da}.timer-stat strong,#timer-phase{color:#8d3048}#log-list{background:#fffaf8;color:#674e58;border-color:#eddce0}#log-export{color:#81394c;background:#fff5ee;border-color:#e8d1c7}button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline-color:#a0486266}.panel-foot::before{content:'✿  ';color:#b96b79}
 #update-banner{padding:10px 14px;background:#fff2dc;border-bottom:1px solid #e8c59a;color:#714634}#update-banner strong{display:block;font-size:12px}#update-banner p{margin:3px 0 7px;font-size:11px}#update-banner div{display:flex;gap:8px}#update-banner button{font-size:11px;padding:5px 10px}#update-now{background:#8d3048;color:#fff;border-color:#8d3048}
+.idle-confirm-option{display:flex;align-items:center;gap:8px;padding:9px 12px;margin-bottom:9px;background:#fffaf5;border:1px solid var(--line);border-radius:10px;cursor:pointer}.idle-confirm-option input{accent-color:#8d3048;width:15px;height:15px;flex-shrink:0}
 </style>
 <section aria-label="U校园答案搬运助手">
 <header><div class="brand-mark">U</div><div class="brand-copy"><span>✿ 胡桃的学习手记 · U校园</span><strong>答案搬运助手 <b class="version">v${SCRIPT_VERSION}</b></strong></div><button id="toggle" title="收起或展开助手">收起</button></header>
@@ -1556,6 +1557,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 <div class="window-links"><button id="show-timer" class="timer-link">定时答题窗口 ↗</button><button id="toggle-log" class="timer-link">关闭日志窗口</button></div>
 <label class="update-route">更新线路<select id="update-route"><option value="server">阿里云 dl.keon5223.xyz</option><option value="github">GitHub</option></select></label>
 <button id="check-update" class="timer-link">检查所选线路</button>
+<label class="idle-confirm-option"><input id="auto-idle-confirm" type="checkbox">长时间未操作时自动点「确定」</label>
 <details class="card" id="import-panel"><summary>导入答案与页面工具</summary><small>选择答案 JSON 自动导入，或粘贴后点导入。</small><input id="file" type="file" accept="application/json,.json"><textarea id="answers" placeholder="在此粘贴完整答案 JSON"></textarea><div class="import-actions"><button id="import-course">导入整单元答案</button><button id="preview">核对答案</button><button id="fill" disabled>填写本页答案</button></div><small>导入只保存；同一本书、同一道题的答案会更新。</small>
 <details class="advanced-tools"><summary>页面资料与模板</summary><div class="import-actions"><button id="scan">采集当前练习</button><button id="export">导出页面资料</button><button id="template">导出答案模板</button></div></details></details>
 <div class="status-card"><div class="status-label">运行状态</div><pre id="status" role="status" aria-live="polite">准备就绪。选择一道练习开始。</pre></div><div class="panel-foot">拖动顶部标题可移动窗口</div>
@@ -1649,6 +1651,37 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     if (autoState?.running) timerStatus(text);
     ui('status').setAttribute('data-state', /失败|未完成|找不到|未找到|卡在|超过|无法|不够/.test(text) ? 'error' : /完成|已提交|已导入|已合并/.test(text) ? 'success' : 'info');
   };
+  const IDLE_CONFIRM_KEY = 'ucampus-idle-confirm-enabled/v1';
+  const idleConfirmInput = ui('auto-idle-confirm');
+  idleConfirmInput.checked = sharedRead(IDLE_CONFIRM_KEY, false) === true;
+  idleConfirmInput.onchange = () => {
+    try { sharedWrite(IDLE_CONFIRM_KEY, idleConfirmInput.checked); }
+    catch (error) { idleConfirmInput.checked = !idleConfirmInput.checked; status('自动确认设置未保存：' + error.message); }
+  };
+  const confirmedIdleButtons = new WeakSet();
+  function confirmIdleNotice() {
+    if (!idleConfirmInput.checked) return;
+    for (const button of document.querySelectorAll('button[id^="mask_notice_id_"]')) {
+      if (!/^mask_notice_id_\d{13}$/.test(button.id) || confirmedIdleButtons.has(button) || button.disabled ||
+          normalize(button.textContent) !== '确定' || !button.getClientRects().length ||
+          getComputedStyle(button).visibility === 'hidden') continue;
+      const notice = normalize(button.parentElement?.textContent);
+      if (!notice.includes('由于你长时间未操作，请点确定继续使用。')) continue;
+      confirmedIdleButtons.add(button);
+      button.click();
+      appendActivityLog('已自动确认网页的长时间未操作提示。');
+    }
+  }
+  if (typeof MutationObserver === 'function') {
+    let idleScanTimer;
+    const scheduleIdleScan = () => {
+      if (idleScanTimer || !idleConfirmInput.checked) return;
+      idleScanTimer = setTimeout(() => { idleScanTimer = null; confirmIdleNotice(); }, 150);
+    };
+    new MutationObserver(scheduleIdleScan).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+    idleConfirmInput.addEventListener('change', scheduleIdleScan);
+  }
+  confirmIdleNotice();
   const ROUTE_KEY = 'ucampus-learned-routes/v1';
   let taskTreeSignature = '';
   let lastTreeFocus = '';

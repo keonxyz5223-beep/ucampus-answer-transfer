@@ -2,7 +2,7 @@
 
 油猴脚本。只填写已经整理好的答案，不猜空着的题，也不自动解题。
 
-当前版本 **0.4.4**。本版已内置教程3的 Unit 1–6 中已核对的 96 道练习。Unit 4 / Watching street interviews / Exercise 3 与 Unit 6 / Opening up / Exercise 2 为分组答案，缺真实题面，暂不收录。主窗口可以选择更新线路：
+当前版本 **0.4.5**。本版已内置教程3的 Unit 1–6 中已核对的 96 道练习。Unit 4 / Watching street interviews / Exercise 3 与 Unit 6 / Opening up / Exercise 2 为分组答案，缺真实题面，暂不收录。主窗口可以选择更新线路：
 
 - 阿里云：https://dl.keon5223.xyz/ucampus-answer-transfer.user.js
 - GitHub：https://raw.githubusercontent.com/keonxyz5223-beep/ucampus-answer-transfer/main/ucampus-answer-transfer.user.js
@@ -20,6 +20,8 @@
 - 操作日志窗口：简短中文实时记录；最近 120 条保存在本机，可点「导出」下载 UTF-8 文本，或点「清空」删除记录。可从主窗口关闭，关闭不会停止任务。0.4.2 及更早版本的旧日志只在原页面内存中，更新前先导出或截图。
 
 三个窗口都能单独拖动。
+
+主窗口新增「长时间未操作时自动点『确定』」开关，默认关闭。打开后只识别页面中同时符合已核对文案「由于你长时间未操作，请点确定继续使用。」和 `mask_notice_id_` 按钮 ID 的弹窗；不会操作答题提交确认框。此功能只在脚本匹配的页面生效，无法补回网页已经停止的计时；真实 U校园页面尚待实际验收。
 
 ## 导入答案
 
