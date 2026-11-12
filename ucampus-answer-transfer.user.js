@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         U校园 · 我的答案搬运助手
 // @namespace    local.ucampus.answer-transfer
-// @version      0.4.3
+// @version      0.4.4
 // @description  按本人整理的答案填写当前练习，并点击页面上的提交节点。只填已给出的答案。
 // @match        https://uai.unipus.cn/*
 // @match        https://ucontent.unipus.cn/*
@@ -21,7 +21,7 @@
 
 (() => {
   'use strict';
-  const SCRIPT_VERSION = '0.4.3';
+  const SCRIPT_VERSION = '0.4.4';
   const UPDATE_ROUTES = {
     server: 'https://dl.keon5223.xyz/ucampus-answer-transfer.user.js',
     github: 'https://raw.githubusercontent.com/keonxyz5223-beep/ucampus-answer-transfer/main/ucampus-answer-transfer.user.js'
@@ -1533,9 +1533,11 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 .window-links{display:grid;grid-template-columns:1fr 1fr;gap:8px}.log-window{position:fixed;right:784px;top:32px;width:340px;max-height:360px;z-index:2147483646}.log-window header{padding:13px;gap:8px}.log-window .brand-copy strong{font-size:15px}#log-export,#log-clear,#log-close{padding:6px 8px;font-size:10px;color:#71839e;border-color:#e0e7f2}#log-body{padding:0 12px 12px;min-height:0;overflow:hidden}#log-list{height:235px;max-height:calc(100vh - 190px);overflow:auto;border:1px solid #e0e8f5;border-radius:10px;background:#fff;padding:9px 10px;color:#5b7195;font-size:11px;line-height:1.9;scrollbar-width:thin;margin:0}#log-body small{font-size:9px;margin-top:7px}
 /* 胡桃主题：梅花、蝶影与暖金描边，保持正文易读。 */
 :host{--accent:#8d3048;--line:#eadce0;--muted:#917982;color:#473640}section{background:#fcf6f4;border-color:#e7cbd0;box-shadow:0 20px 65px #49202d28,0 3px 12px #49202d12}header{background:linear-gradient(105deg,#fff9f6 0%,#f8e8e9 72%,#efd5d6 100%);border-bottom:1px solid #e7cbd0}.brand-mark{position:relative;background:linear-gradient(140deg,#7d253d,#aa4351);box-shadow:0 5px 12px #70243d40;color:#ffe9bd}.brand-mark::after{content:'✿';position:absolute;right:-6px;top:-8px;color:#d9a160;font-size:16px;text-shadow:0 1px 2px #fff}.brand-copy strong{color:#643044}.brand-copy span,.caption{color:#9b6975}.current-banner{background:#fff9f6;border-color:#ead6d7}#current-task,#timer-summary{background:#faeceb;color:#79384d}.card{border-color:#eedfe0;background:#fffcfa}.card-heading strong{color:#76394d}.task-row.current{border-color:#af6875;background:#faeeed;color:#7c3448;box-shadow:inset 3px 0 #9a4257}.dot.current{background:#9a4257}.timer-link{background:#faedec;color:#833d50;border-color:#e9cbcf}.timer-mark{background:#f7e6e4;color:#92445b}#submit-course,#auto-start{background:#8d3048;border-color:#8d3048;box-shadow:0 4px 10px #8d304830}#submit-course:hover:not(:disabled),#auto-start:hover:not(:disabled){background:#75253d;border-color:#75253d}#fill-course{color:#833e52;background:#fff5f3;border-color:#efd6da}.timer-stat strong,#timer-phase{color:#8d3048}#log-list{background:#fffaf8;color:#674e58;border-color:#eddce0}#log-export{color:#81394c;background:#fff5ee;border-color:#e8d1c7}button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline-color:#a0486266}.panel-foot::before{content:'✿  ';color:#b96b79}
+#update-banner{padding:10px 14px;background:#fff2dc;border-bottom:1px solid #e8c59a;color:#714634}#update-banner strong{display:block;font-size:12px}#update-banner p{margin:3px 0 7px;font-size:11px}#update-banner div{display:flex;gap:8px}#update-banner button{font-size:11px;padding:5px 10px}#update-now{background:#8d3048;color:#fff;border-color:#8d3048}
 </style>
 <section aria-label="U校园答案搬运助手">
 <header><div class="brand-mark">U</div><div class="brand-copy"><span>✿ 胡桃的学习手记 · U校园</span><strong>答案搬运助手 <b class="version">v${SCRIPT_VERSION}</b></strong></div><button id="toggle" title="收起或展开助手">收起</button></header>
+<div id="update-banner" role="status" hidden><strong id="update-title">发现新版本</strong><p>阿里云已发布新版脚本。更新由 Tampermonkey 确认安装。</p><div><button id="update-now">前往更新</button><button id="update-later">稍后</button></div></div>
 <div class="current-banner"><small id="current-task">当前题：识别中</small></div>
 <div id="body">
 <div class="card">
@@ -2553,6 +2555,45 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
       });
     });
   }
+  // 后台自查只读阿里云版本；失败静默，避免影响练习和定时提交。
+  const AUTO_UPDATE_INTERVAL = 5 * 60 * 1000;
+  let lastAutoUpdateCheck = 0, autoUpdateChecking = false, autoUpdateVersion = '';
+  ui('update-now').onclick = () => {
+    if (!autoUpdateVersion) return;
+    if (typeof GM_openInTab === 'function') GM_openInTab(UPDATE_ROUTES.server, { active: true });
+    else window.open(UPDATE_ROUTES.server, '_blank', 'noopener');
+  };
+  ui('update-later').onclick = () => {
+    ui('update-banner').hidden = true;
+    try { sessionStorage.setItem('ucampus-update-dismissed/v1', autoUpdateVersion); } catch {}
+  };
+  function checkUpdateInBackground() {
+    if (document.hidden || autoUpdateChecking || Date.now() - lastAutoUpdateCheck < AUTO_UPDATE_INTERVAL || typeof GM_xmlhttpRequest !== 'function') return;
+    lastAutoUpdateCheck = Date.now(); autoUpdateChecking = true;
+    try { GM_xmlhttpRequest({
+      method: 'GET', url: UPDATE_ROUTES.server + '?check=' + lastAutoUpdateCheck,
+      headers: { Range: 'bytes=0-511' }, timeout: 8000,
+      onload: response => {
+        autoUpdateChecking = false;
+        if (response.status !== 200 && response.status !== 206) return;
+        const match = String(response.responseText || '').match(/^\/\/\s*@version\s+(\d+(?:\.\d+){1,3})\s*$/m);
+        if (!match || compareVersions(match[1], SCRIPT_VERSION) <= 0) { ui('update-banner').hidden = true; return; }
+        autoUpdateVersion = match[1];
+        let dismissed = '';
+        try { dismissed = sessionStorage.getItem('ucampus-update-dismissed/v1') || ''; } catch {}
+        if (dismissed !== autoUpdateVersion) {
+          ui('update-title').textContent = '发现新版本 v' + autoUpdateVersion;
+          ui('update-banner').hidden = false;
+        }
+      },
+      onerror: () => { autoUpdateChecking = false; },
+      ontimeout: () => { autoUpdateChecking = false; }
+    }); } catch { autoUpdateChecking = false; }
+  }
+  setTimeout(checkUpdateInBackground, 1500);
+  setInterval(checkUpdateInBackground, AUTO_UPDATE_INTERVAL);
+  window.addEventListener('focus', checkUpdateInBackground);
+  document.addEventListener('visibilitychange', checkUpdateInBackground);
   try {
     const savedRoute = localStorage.getItem(UPDATE_ROUTE_KEY);
     if (savedRoute === 'github' || savedRoute === 'server') ui('update-route').value = savedRoute;

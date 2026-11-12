@@ -2,12 +2,12 @@
 
 油猴脚本。只填写已经整理好的答案，不猜空着的题，也不自动解题。
 
-当前版本 **0.4.3**。本版已内置教程3的 Unit 1–6 中已核对的 96 道练习。Unit 4 / Watching street interviews / Exercise 3 与 Unit 6 / Opening up / Exercise 2 为分组答案，缺真实题面，暂不收录。主窗口可以选择更新线路：
+当前版本 **0.4.4**。本版已内置教程3的 Unit 1–6 中已核对的 96 道练习。Unit 4 / Watching street interviews / Exercise 3 与 Unit 6 / Opening up / Exercise 2 为分组答案，缺真实题面，暂不收录。主窗口可以选择更新线路：
 
 - 阿里云：https://dl.keon5223.xyz/ucampus-answer-transfer.user.js
 - GitHub：https://raw.githubusercontent.com/keonxyz5223-beep/ucampus-answer-transfer/main/ucampus-answer-transfer.user.js
 
-篡改猴自带的自动更新走阿里云。脚本里点「检查所选线路」时，按当时选中的那一条比较版本。
+篡改猴自带的自动更新走阿里云。0.4.4 起，用户打开 U校园页面时脚本会自动向阿里云检查一次，页面保持打开时约每 5 分钟检查一次；发现新版会在主窗口标题下显示更新提示，点击后打开 Tampermonkey 安装页。用户点击「稍后」可在当前标签页暂时关闭该版本提示。脚本里点「检查所选线路」时，按当时选中的那一条比较版本。已安装的 0.4.3 或更早版本须先经篡改猴更新到 0.4.4，才具备页面自查能力。
 
 篡改猴打开上面的链接后安装。已装过的，在脚本主窗口点「检查更新」。发现新版本会打开安装页，点更新即可，不要选「重新安装」。更新不会清掉已导入的答案和本地提交记录。
 
