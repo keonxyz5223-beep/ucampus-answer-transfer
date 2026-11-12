@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         U校园 · 我的答案搬运助手
 // @namespace    local.ucampus.answer-transfer
-// @version      0.4.2
+// @version      0.4.3
 // @description  按本人整理的答案填写当前练习，并点击页面上的提交节点。只填已给出的答案。
 // @match        https://uai.unipus.cn/*
 // @match        https://ucontent.unipus.cn/*
@@ -21,7 +21,7 @@
 
 (() => {
   'use strict';
-  const SCRIPT_VERSION = '0.4.2';
+  const SCRIPT_VERSION = '0.4.3';
   const UPDATE_ROUTES = {
     server: 'https://dl.keon5223.xyz/ucampus-answer-transfer.user.js',
     github: 'https://raw.githubusercontent.com/keonxyz5223-beep/ucampus-answer-transfer/main/ucampus-answer-transfer.user.js'
@@ -1530,10 +1530,12 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 
 .timer-window{position:fixed;right:448px;top:32px;width:320px;z-index:2147483646}.timer-window header{padding:14px;gap:9px}.timer-window .brand-copy strong{font-size:15px}.timer-mark{width:34px;height:34px;display:grid;place-items:center;border-radius:11px;background:#eaf0ff;color:#4167dc;font-size:25px;font-weight:650}.timer-window .current-banner{padding:0 14px 12px}#timer-summary{background:#edf2ff;color:#4c68a7;font-size:10px;padding:8px 10px;border-radius:8px;margin:0;max-height:52px;overflow:hidden;overflow-wrap:anywhere}#timer-start-path{margin:0;font-size:10px;overflow-wrap:anywhere;color:#7085a5}#timer-stop-quick{padding:6px 9px;color:#bb5963;background:#fff4f5;border-color:#f1d9dd;font-size:11px}#timer-body{padding:12px}.timer-window #auto-scope{font-size:11px}.timer-window #timer-status[data-state=error]{color:#b15a61}.timer-window #timer-status[data-state=success]{color:#38795c}.timer-link{display:block;width:100%;margin:0 0 11px;padding:10px;background:#edf2ff;border-color:#d9e2fc;color:#4666c7}.update-route{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 8px;font-size:11px;color:#70829b}.update-route select{flex:1;border:1px solid #dce4f0;border-radius:8px;background:#fff;padding:7px 8px;font:inherit;color:#31435f}
 .timer-metrics{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px}.timer-stat{border:1px solid #dfe7f7;background:#fff;border-radius:12px;padding:10px 12px}.timer-stat small{margin:0;font-size:10px;color:#8594aa}.timer-stat strong{display:block;margin-top:4px;font-size:23px;font-weight:650;line-height:1.3;color:#3b60c7;font-variant-numeric:tabular-nums}#timer-remaining{font-size:21px}.timer-progress-line{display:flex;justify-content:space-between;gap:8px;font-size:10px;margin:0 2px 12px;color:#7a8fac}#timer-phase{color:#4869c1}#timer-task{margin:0;color:#5b7298;font-size:11px;line-height:1.8;overflow-wrap:anywhere}
-.window-links{display:grid;grid-template-columns:1fr 1fr;gap:8px}.log-window{position:fixed;right:784px;top:32px;width:340px;max-height:360px;z-index:2147483646}.log-window header{padding:13px;gap:8px}.log-window .brand-copy strong{font-size:15px}#log-clear,#log-close{padding:6px 8px;font-size:10px;color:#71839e;border-color:#e0e7f2}#log-body{padding:0 12px 12px;min-height:0;overflow:hidden}#log-list{height:235px;max-height:calc(100vh - 190px);overflow:auto;border:1px solid #e0e8f5;border-radius:10px;background:#fff;padding:9px 10px;color:#5b7195;font-size:11px;line-height:1.9;scrollbar-width:thin;margin:0}#log-body small{font-size:9px;margin-top:7px}
+.window-links{display:grid;grid-template-columns:1fr 1fr;gap:8px}.log-window{position:fixed;right:784px;top:32px;width:340px;max-height:360px;z-index:2147483646}.log-window header{padding:13px;gap:8px}.log-window .brand-copy strong{font-size:15px}#log-export,#log-clear,#log-close{padding:6px 8px;font-size:10px;color:#71839e;border-color:#e0e7f2}#log-body{padding:0 12px 12px;min-height:0;overflow:hidden}#log-list{height:235px;max-height:calc(100vh - 190px);overflow:auto;border:1px solid #e0e8f5;border-radius:10px;background:#fff;padding:9px 10px;color:#5b7195;font-size:11px;line-height:1.9;scrollbar-width:thin;margin:0}#log-body small{font-size:9px;margin-top:7px}
+/* 胡桃主题：梅花、蝶影与暖金描边，保持正文易读。 */
+:host{--accent:#8d3048;--line:#eadce0;--muted:#917982;color:#473640}section{background:#fcf6f4;border-color:#e7cbd0;box-shadow:0 20px 65px #49202d28,0 3px 12px #49202d12}header{background:linear-gradient(105deg,#fff9f6 0%,#f8e8e9 72%,#efd5d6 100%);border-bottom:1px solid #e7cbd0}.brand-mark{position:relative;background:linear-gradient(140deg,#7d253d,#aa4351);box-shadow:0 5px 12px #70243d40;color:#ffe9bd}.brand-mark::after{content:'✿';position:absolute;right:-6px;top:-8px;color:#d9a160;font-size:16px;text-shadow:0 1px 2px #fff}.brand-copy strong{color:#643044}.brand-copy span,.caption{color:#9b6975}.current-banner{background:#fff9f6;border-color:#ead6d7}#current-task,#timer-summary{background:#faeceb;color:#79384d}.card{border-color:#eedfe0;background:#fffcfa}.card-heading strong{color:#76394d}.task-row.current{border-color:#af6875;background:#faeeed;color:#7c3448;box-shadow:inset 3px 0 #9a4257}.dot.current{background:#9a4257}.timer-link{background:#faedec;color:#833d50;border-color:#e9cbcf}.timer-mark{background:#f7e6e4;color:#92445b}#submit-course,#auto-start{background:#8d3048;border-color:#8d3048;box-shadow:0 4px 10px #8d304830}#submit-course:hover:not(:disabled),#auto-start:hover:not(:disabled){background:#75253d;border-color:#75253d}#fill-course{color:#833e52;background:#fff5f3;border-color:#efd6da}.timer-stat strong,#timer-phase{color:#8d3048}#log-list{background:#fffaf8;color:#674e58;border-color:#eddce0}#log-export{color:#81394c;background:#fff5ee;border-color:#e8d1c7}button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline-color:#a0486266}.panel-foot::before{content:'✿  ';color:#b96b79}
 </style>
 <section aria-label="U校园答案搬运助手">
-<header><div class="brand-mark">U</div><div class="brand-copy"><span>U校园 · 学习工具</span><strong>答案搬运助手 <b class="version">v${SCRIPT_VERSION}</b></strong></div><button id="toggle" title="收起或展开助手">收起</button></header>
+<header><div class="brand-mark">U</div><div class="brand-copy"><span>✿ 胡桃的学习手记 · U校园</span><strong>答案搬运助手 <b class="version">v${SCRIPT_VERSION}</b></strong></div><button id="toggle" title="收起或展开助手">收起</button></header>
 <div class="current-banner"><small id="current-task">当前题：识别中</small></div>
 <div id="body">
 <div class="card">
@@ -1557,7 +1559,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 <div class="status-card"><div class="status-label">运行状态</div><pre id="status" role="status" aria-live="polite">准备就绪。选择一道练习开始。</pre></div><div class="panel-foot">拖动顶部标题可移动窗口</div>
 </div></section>
 <section id="timer-window" class="timer-window" aria-label="独立定时答题窗口">
-<header id="timer-header"><div class="timer-mark">◷</div><div class="brand-copy"><span>独立任务窗口</span><strong>定时答题</strong></div><button id="timer-stop-quick" disabled title="停止正在运行的定时任务">停止</button><button id="timer-toggle">收起</button></header>
+<header id="timer-header"><div class="timer-mark">✦</div><div class="brand-copy"><span>独立任务窗口</span><strong>定时答题</strong></div><button id="timer-stop-quick" disabled title="停止正在运行的定时任务">停止</button><button id="timer-toggle">收起</button></header>
 <div class="current-banner"><small id="timer-summary">未启动 · 先在主窗口选择起始练习</small></div>
 <div id="timer-body"><div class="timer-metrics"><div class="timer-stat"><small>已用时</small><strong id="timer-elapsed">00:00</strong></div><div class="timer-stat"><small>距本题计划提交</small><strong id="timer-remaining">—</strong></div></div><div class="timer-progress-line"><span id="timer-progress">已完成 0 / 0 道</span><span id="timer-phase">未启动</span></div><div class="card"><div class="card-heading"><strong>当前练习</strong><span class="caption">实际任务位置</span></div><small id="timer-task">尚未开始</small></div><div class="card"><div class="card-heading"><strong>所选练习</strong><span class="caption">与主窗口同步</span></div><small id="timer-start-path"></small></div>
 <div class="card"><div id="auto-panel">
@@ -1566,10 +1568,19 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 <small id="auto-preview">5分钟做5道练习，平均1分钟一道。先填，到时间再提交。</small><div class="auto-actions"><button id="auto-start">开始定时任务</button><button id="auto-stop" disabled>停止</button></div>
 <small>每题是一整页练习。跳转失败继续往后找；填写或提交失败则停止。请保持页面打开，电脑不要休眠。</small><pre id="auto-skipped" aria-label="跳转失败记录"></pre></div></div>
 <div class="status-card"><div class="status-label">定时任务状态</div><pre id="timer-status" role="status" aria-live="polite">设置分钟数和题数后，点击开始。</pre></div><div class="panel-foot">独立拖动、收起 · 收起不会停止任务</div></div></section>
-<section id="log-window" class="log-window" aria-label="实时操作日志窗口"><header id="log-header"><div class="timer-mark">≡</div><div class="brand-copy"><span>简洁中文 · 实时更新</span><strong>操作日志</strong></div><button id="log-clear">清空</button><button id="log-close">关闭</button></header><div id="log-body"><pre id="log-list" role="log" aria-live="polite" aria-label="实时操作记录">还没有操作记录。</pre><small>保留最近120条。关闭此窗不会停止任务。</small></div></section>`;
+<section id="log-window" class="log-window" aria-label="实时操作日志窗口"><header id="log-header"><div class="timer-mark">✿</div><div class="brand-copy"><span>本地留存 · 最近120条</span><strong>操作日志</strong></div><button id="log-export" title="将最近120条日志下载为文本">导出</button><button id="log-clear">清空</button><button id="log-close">关闭</button></header><div id="log-body"><pre id="log-list" role="log" aria-live="polite" aria-label="实时操作记录">还没有操作记录。</pre><small>最近120条保存在本机；导出前可查看并清理个人信息。关闭此窗不会停止任务。</small></div></section>`;
   (document.body || document.documentElement).appendChild(host);
   const ui = id => shadow.getElementById(id);
-  let activityLog = [], lastActivityMessage = '';
+  const ACTIVITY_LOG_KEY = 'ucampus-activity-log/v1';
+  function readActivityLog() {
+    try {
+      const saved = sharedRead(ACTIVITY_LOG_KEY, []);
+      if (!Array.isArray(saved)) return [];
+      return saved.filter(item => item && typeof item.time === 'string' && /^\d{1,2}:\d{2}:\d{2}$/.test(item.time) && typeof item.message === 'string')
+        .slice(-120).map(item => ({ time: item.time, message: item.message.slice(0, 160), at: typeof item.at === 'string' ? item.at : '' }));
+    } catch { return []; }
+  }
+  let activityLog = readActivityLog(), lastActivityMessage = activityLog.at(-1)?.message || '';
   function shortLogMessage(text) {
     const message = String(text || '').trim();
     if (!message) return '';
@@ -1599,9 +1610,11 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     const message = shortLogMessage(text);
     if (!message || message === lastActivityMessage) return;
     lastActivityMessage = message;
-    const time = typeof Date === 'function' ? new Date(Date.now()).toLocaleTimeString('zh-CN', { hour12: false }) : formatTimerDuration(Date.now() / 1000);
-    activityLog.push({ time, message });
+    const now = new Date();
+    const time = now.toLocaleTimeString('zh-CN', { hour12: false });
+    activityLog.push({ time, message, at: now.toISOString() });
     if (activityLog.length > 120) activityLog.splice(0, activityLog.length - 120);
+    try { sharedWrite(ACTIVITY_LOG_KEY, activityLog); } catch { /* 存储不可用时仍显示本页日志 */ }
     renderActivityLog();
   }
   function formatTimerDuration(seconds) {
@@ -2472,7 +2485,23 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   enableDrag(ui('log-window'), ui('log-header'), LOG_PANEL_KEY, placeLogPanel);
   ui('toggle-log').onclick = () => setLogVisible(ui('log-window').hidden);
   ui('log-close').onclick = () => setLogVisible(false);
-  ui('log-clear').onclick = () => { activityLog = []; lastActivityMessage = ''; renderActivityLog(); };
+  ui('log-export').onclick = () => {
+    if (!activityLog.length) { window.alert('暂无可导出的日志。'); return; }
+    const lines = activityLog.map(item => {
+      const date = item.at && !Number.isNaN(Date.parse(item.at)) ? new Date(item.at).toLocaleDateString('sv-SE') + ' ' : '';
+      return date + item.time + '  ' + item.message;
+    });
+    const blob = new Blob(['\uFEFF' + 'U校园答案搬运助手 v' + SCRIPT_VERSION + ' 操作日志（最近120条）\n' + lines.join('\n') + '\n'], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob), link = document.createElement('a');
+    link.href = url;
+    link.download = 'U校园操作日志-' + new Date().toLocaleDateString('sv-SE') + '.txt';
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  };
+  ui('log-clear').onclick = () => {
+    try { sharedWrite(ACTIVITY_LOG_KEY, []); } catch { window.alert('日志未能清空本地存储，请检查浏览器存储权限。'); return; }
+    activityLog = []; lastActivityMessage = ''; renderActivityLog();
+  };
   ui('timer-toggle').onclick = () => setTimerCollapsed(!ui('timer-body').hidden);
   function compareVersions(left, right) {
     const a = String(left).split('.').map(part => Number(part) || 0);
