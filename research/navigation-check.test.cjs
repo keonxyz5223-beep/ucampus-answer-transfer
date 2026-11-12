@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const script = fs.readFileSync(require('node:path').join(__dirname, '..', 'ucampus-answer-transfer.user.js'), 'utf8');
-const section = script.split("const NAV_CHECK_KEY = 'ucampus-navigation-check/v1';")[1]?.split('  let accountIdentity = null;')[0];
+const section = script.split("const NAV_CHECK_KEY = 'ucampus-navigation-check/v1';")[1]?.split(/  (?:let|var) accountIdentity = null;/)[0];
 assert.ok(section, 'navigation check helpers must exist');
 const store = new Map();
 const taskKey = (path, book) => book + '/' + path.join('/');

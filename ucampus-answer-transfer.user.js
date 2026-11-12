@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         U校园 · 我的答案搬运助手
 // @namespace    local.ucampus.answer-transfer
-// @version      0.4.10
+// @version      0.4.11
 // @description  按本人整理的答案填写当前练习，并点击页面上的提交节点。只填已给出的答案。
 // @match        https://uai.unipus.cn/*
 // @match        https://ucontent.unipus.cn/*
@@ -21,7 +21,7 @@
 
 (() => {
   'use strict';
-  const SCRIPT_VERSION = '0.4.10';
+  const SCRIPT_VERSION = '0.4.11';
   const UPDATE_ROUTES = {
     server: 'https://dl.keon5223.xyz/ucampus-answer-transfer.user.js',
     github: 'https://raw.githubusercontent.com/keonxyz5223-beep/ucampus-answer-transfer/main/ucampus-answer-transfer.user.js'
@@ -178,21 +178,28 @@
     try { localStorage.setItem(key, JSON.stringify(value)); saved = true; } catch {}
     if (!saved) throw new Error('浏览器没有保存书架数据，请检查脚本存储权限。');
   }
+  function shelfStorageKey() {
+    const identity = isShelfPage() ? accountOnHome() : accountIdentity;
+    return identity?.key ? 'ucampus-owned-books/v2/' + identity.key : '';
+  }
   function ownedBooks() {
-    const saved = sharedRead('ucampus-owned-books/v1', []);
-    return [...new Set([...CONFIRMED_BOOKS, ...(Array.isArray(saved) ? saved.filter(name => typeof name === 'string' && name.length < 150).map(bookName) : [])])];
+    const key = shelfStorageKey(), saved = key ? sharedRead(key, []) : [];
+    return [...new Set((Array.isArray(saved) ? saved : []).filter(name => typeof name === 'string' && name.length >= 2 && name.length < 150).map(bookName))];
+  }
+  function knownBookNames() {
+    return [...new Set([...CONFIRMED_BOOKS, ...ownedBooks(), ...COURSE_TASKS.map(taskBook)])];
   }
   function isShelfPage() {
     return !!(typeof window !== 'undefined' && window.location && window.location.hostname === 'ucloud.unipus.cn' && /^\/portal\/?$/.test(window.location.pathname));
   }
-  function booksInText(value, names = ownedBooks()) {
+  function booksInText(value, names = knownBookNames()) {
     const text = compactLabel(value);
     return names.filter(name => text.includes(compactLabel(name)));
   }
   function shelfBooksFromPage() {
     if (!isShelfPage()) return [];
     const nodes = [...document.querySelectorAll('a, [title], h2, h3, h4, p, span, div')];
-    const names = [], knownBooks = ownedBooks();
+    const names = [], knownBooks = knownBookNames();
     for (const element of nodes) {
       const text = normalize(element.getAttribute('title') || element.textContent || '');
       if (!text || text.length > 180) continue;
@@ -206,15 +213,17 @@
   function readShelf(quiet = false) {
     const found = shelfBooksFromPage();
     if (!found.length) { if (!quiet) throw new Error('请在U校园首页“我的教程”显示教材后，再点“读取首页书架”。'); return []; }
+    const key = shelfStorageKey();
+    if (!key) { if (!quiet) throw new Error('首页账号还没识别，暂不保存书架。请等个人资料加载后重试。'); return []; }
     const merged = [...new Set([...ownedBooks(), ...found])];
-    const previous = sharedRead('ucampus-owned-books/v1', []);
-    if (JSON.stringify(previous) !== JSON.stringify(merged)) sharedWrite('ucampus-owned-books/v1', merged);
+    const previous = sharedRead(key, []);
+    if (JSON.stringify(previous) !== JSON.stringify(merged)) sharedWrite(key, merged);
     if (!quiet) { paintTaskOptions(); status('已从首页读取 ' + found.length + ' 本教材；未收录答案的显示（0/0）。'); }
     return found;
   }
   function activeBook() {
     if (!isShelfPage()) {
-      const names = ownedBooks(), found = new Set();
+      const names = knownBookNames(), found = new Set();
       const nodes = document.querySelectorAll('title, [title], h1, h2, .course-name, .course-title, span');
       for (const element of nodes) {
         const text = normalize(element.getAttribute('title') || element.textContent || '');
@@ -235,6 +244,65 @@
     const candidates = tasks.slice(Math.max(0, start)).filter(task => taskBook(task) === taskBook(selected) && !done.has(taskKey(task.path, task.book)) && (scope === 'book' || (isUnitToken(task.path[0]) ? unitNumberFrom(task.path[0]) : '1') === unit));
     if (candidates.length < count) throw new Error('从所选题往后仅有 ' + candidates.length + ' 道未提交且有答案的练习，不够计划的 ' + count + ' 道。');
     return (includeReserve ? candidates : candidates.slice(0, count)).map(task => ({ ...task, path: task.path.slice(), answers: task.answers.slice() }));
+  }
+  function buildRepeatPlan(tasks, excluded, selected) {
+    if (!selected) throw new Error('先选择开始的练习。');
+    const start = tasks.indexOf(selected);
+    if (start < 0) throw new Error('所选练习不在当前答案库中。');
+    const candidates = tasks.map((task, index) => ({ task, index }))
+      .filter(({ task }) => taskBook(task) === taskBook(selected) && !excluded.has(taskKey(task.path, task.book)));
+    if (!candidates.length) throw new Error('这本书没有可跳转且有答案的练习，不能启动重复答题。');
+    const first = candidates.findIndex(({ index }) => index >= start);
+    return { tasks: candidates.map(({ task }) => ({ ...task, path: task.path.slice(), answers: task.answers.slice() })), startIndex: first < 0 ? 0 : first };
+  }
+  async function executeRepeatPlan(plan, minutes, deps) {
+    const count = deps.targetCount;
+    if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 1440 || !Number.isInteger(count) || count < 1 || count > 500) throw new Error('请设置有效的总分钟数和1至500的节奏题数。');
+    const slot = minutes * 60000 / count, end = deps.endsAt ?? deps.now() + minutes * 60000;
+    if (slot < 1000 || !plan.tasks?.length) throw new Error('重复答题需要可用练习，平均每道至少1秒。');
+    const failed = new Set();
+    let cursor = plan.startIndex, completed = 0;
+    const check = () => { if (deps.stopped()) throw new Error('定时任务已停止。'); };
+    try {
+      while (deps.now() < end) {
+        check();
+        const task = plan.tasks[cursor]; cursor = (cursor + 1) % plan.tasks.length;
+        const key = taskKey(task.path, task.book);
+        if (failed.has(key)) {
+          if (failed.size === plan.tasks.length) {
+            deps.onPhase?.('waiting');
+            deps.report('这本书已无可跳转的练习，等待总倒计时归零；不会重复尝试失败题。');
+            await deps.waitUntil(end, null, completed, count); check();
+          }
+          continue;
+        }
+        const deadline = Math.min(deps.now() + slot, end);
+        deps.onTask?.(task, completed, count, deadline);
+        deps.onPhase?.('jumping');
+        deps.report('重复答题：正在打开第 ' + (completed + 1) + ' 次练习：' + task.path.join(' / '));
+        try { await deps.jump(task); check(); }
+        catch (error) {
+          check(); if (deps.now() >= end) break;
+          failed.add(key); deps.onSkip?.(task, error, failed.size);
+          continue;
+        }
+        if (deps.now() >= end) break;
+        deps.onPhase?.('filling'); await deps.fill(task); check();
+        if (deps.now() >= end) break;
+        deps.onPhase?.('waiting'); await deps.waitUntil(deadline, task, completed, count); check();
+        if (deps.now() >= end) break;
+        deps.onPhase?.('checking'); await deps.verify(task); check();
+        if (deps.now() >= end) break;
+        deps.onPhase?.('submitting'); await deps.submit(task); check();
+        deps.remember(task); completed++; deps.onProgress?.(completed);
+        deps.report('重复答题已确认提交 ' + completed + ' 次；继续按本书顺序循环，直至总时间结束。');
+      }
+    } catch (error) {
+      check();
+      if (deps.now() < end) throw error;
+      // 截止时终止尚未完成的操作；未确认成功的请求不标绿。
+    }
+    check(); return completed;
   }
   function isRateLimitNotice(text) {
     return /^您?的?操作过于频繁[，,]?请休息几分钟后再继续学习吧[！!。.]?$/.test(compactLabel(text));
@@ -1553,10 +1621,11 @@
       return result;
     });
   }
-  function groupCourseTasks(tasks, submitted, owned = []) {
+  function groupCourseTasks(tasks, submitted, owned = [], onlyOwned = false) {
     const done = submitted || new Set(), books = new Map(owned.map(name => [bookName(name), { name: bookName(name), units: new Map(), done: 0, total: 0 }]));
     tasks.forEach((task, index) => {
       const bookName = taskBook(task);
+      if (onlyOwned && !books.has(bookName)) return;
       const number = isUnitToken(task.path[0]) ? Number(unitNumberFrom(task.path[0])) : 1;
       if (!books.has(bookName)) books.set(bookName, { name: bookName, units: new Map(), done: 0, total: 0 });
       const book = books.get(bookName);
@@ -1582,7 +1651,7 @@
   }
   // 允许离线验证答案格式，不在 Node 环境启动页面界面。
   if (typeof document === 'undefined') {
-    if (typeof module !== 'undefined') module.exports = { normalize, fingerprint, validateAnswers, compactLabel, suggestTasks, alignedMenuPath, answeredMenuFlags, menuAlignment, nextMenuJump, navigationPath, taskKey, unitCompatible, validateCourseImport, planSequenceMoves, groupCourseTasks, formatTaskAnswers, correctionDetails, accountRecord, accountFromHomeFields, accountFromHomeState, accountFromPlayer, compareVersions, isRateLimitNotice, createSubmitProtection, buildAutoPlan, executeTimedPlan, bookName, taskBook, CONFIRMED_BOOKS, COURSE_TASKS };
+    if (typeof module !== 'undefined') module.exports = { normalize, fingerprint, validateAnswers, compactLabel, suggestTasks, alignedMenuPath, answeredMenuFlags, menuAlignment, nextMenuJump, navigationPath, taskKey, unitCompatible, validateCourseImport, planSequenceMoves, groupCourseTasks, formatTaskAnswers, correctionDetails, accountRecord, accountFromHomeFields, accountFromHomeState, accountFromPlayer, compareVersions, isRateLimitNotice, createSubmitProtection, buildAutoPlan, executeTimedPlan, buildRepeatPlan, executeRepeatPlan, bookName, taskBook, CONFIRMED_BOOKS, COURSE_TASKS };
     return;
   }
   if (document.getElementById('ucampus-transfer-host')) return;
@@ -1624,7 +1693,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 <div class="card-heading"><strong>我的教材</strong><span class="caption">练习目录</span></div>
 <select id="task" hidden aria-hidden="true" tabindex="-1"></select>
 <div class="toolbar"><button id="read-books">读取首页书架</button><button id="sync-records">同步跨页面记录</button></div>
-<small id="data-note"></small><small id="account-note">账号识别中；提交标记暂不显示。</small><div class="account-actions"><button id="refresh-account" type="button">重新核对账号</button><button id="bind-account" type="button" hidden>绑定学校和学号</button><button id="claim-legacy" type="button" disabled>认领旧版提交记录</button></div><small>旧版标绿需认领；「同步跨页面记录」只同步数据，不会自动指定账号。</small><small id="books-note" hidden>无答案的教材显示（0/0）。</small>
+<small id="data-note"></small><small id="account-note">账号识别中；提交标记暂不显示。</small><div class="account-actions"><button id="refresh-account" type="button">重新核对账号</button><button id="bind-account" type="button" hidden>绑定学校和学号</button><button id="claim-legacy" type="button" disabled>认领旧版提交记录</button></div><small>旧版标绿需认领；「同步跨页面记录」只同步数据，不会自动指定账号。</small><small id="books-note">仅显示当前账号首页实际读到的教材；有内置答案不代表账号拥有该书。无答案的教材显示（0/0）。</small>
 <div id="task-tree" aria-label="按教材和单元分类的练习目录"></div>
 <div class="legend"><span><i class="dot pending"></i>有答案 · 未交</span><span><i class="dot done"></i>已提交</span><span><i class="dot current"></i>当前题</span><span><i class="dot unreachable"></i>跳转未找到</span></div>
 <small>单元进度为（已做/已收录）。蓝底是跨账号共享的跳转失败题；列表右侧按钮只改当前账号的本地提交标记，不会向网站提交。</small>
@@ -1646,9 +1715,10 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 <section id="timer-window" class="timer-window" aria-label="独立定时答题窗口">
 <header id="timer-header"><div class="timer-mark">✦</div><div class="brand-copy"><span>独立任务窗口</span><strong>定时答题</strong></div><button id="timer-stop-quick" disabled title="停止正在运行的定时任务">停止</button><button id="timer-toggle">收起</button></header>
 <div class="current-banner"><small id="timer-summary">未启动 · 先在主窗口选择起始练习</small></div>
-<div id="timer-body"><div class="timer-metrics"><div class="timer-stat"><small>已用时</small><strong id="timer-elapsed">00:00</strong></div><div class="timer-stat"><small>距本题计划提交</small><strong id="timer-remaining">—</strong></div></div><div class="timer-progress-line"><span id="timer-progress">已完成 0 / 0 道</span><span id="timer-phase">未启动</span></div><div class="card"><div class="card-heading"><strong>当前练习</strong><span class="caption">实际任务位置</span></div><small id="timer-task">尚未开始</small></div><div class="card"><div class="card-heading"><strong>所选练习</strong><span class="caption">与主窗口同步</span></div><small id="timer-start-path"></small></div>
+<div id="timer-body"><div class="timer-metrics"><div class="timer-stat"><small>已用时</small><strong id="timer-elapsed">00:00</strong></div><div class="timer-stat"><small>距本题计划提交</small><strong id="timer-remaining">—</strong></div></div><small id="timer-total" hidden>总倒计时：—</small><div class="timer-progress-line"><span id="timer-progress">已完成 0 / 0 道</span><span id="timer-phase">未启动</span></div><div class="card"><div class="card-heading"><strong>当前练习</strong><span class="caption">实际任务位置</span></div><small id="timer-task">尚未开始</small></div><div class="card"><div class="card-heading"><strong>所选练习</strong><span class="caption">与主窗口同步</span></div><small id="timer-start-path"></small></div>
 <div class="card"><div id="auto-panel">
-<div class="number-grid"><label>总分钟数<input id="auto-minutes" type="number" min="0.1" max="1440" step="0.1" value="5"></label><label>练习数<input id="auto-count" type="number" min="1" max="500" step="1" value="5"></label></div>
+<div class="number-grid"><label>总分钟数<input id="auto-minutes" type="number" min="0.1" max="1440" step="0.1" value="5"></label><label><span id="auto-count-label">练习数</span><input id="auto-count" type="number" min="1" max="500" step="1" value="5"></label></div>
+<label class="idle-confirm-option"><input id="auto-repeat" type="checkbox">重复答题（包含已做题，整本循环至倒计时结束）</label><small id="auto-repeat-note" hidden>从所选题开始，走到书末后从本书第一题继续。练习数只用于计算间隔；跳转失败跳过，填写或提交失败停止。闲置提示可提前提交，但重复模式的总时间不缩短。</small>
 <select id="auto-scope"><option value="unit">从所选题往后 · 当前单元</option><option value="book">从所选题往后 · 当前教材</option></select>
 <small id="auto-preview">5分钟做5道练习，平均1分钟一道。先填，到时间再提交。</small><div class="auto-actions"><button id="auto-start">开始定时任务</button><button id="auto-stop" disabled>停止</button></div>
 <small>每题是一整页练习。跳转失败继续往后找；填写或提交失败则停止。请保持页面打开，电脑不要休眠。</small><pre id="auto-skipped" aria-label="跳转失败记录"></pre></div></div>
@@ -1714,10 +1784,12 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     if (state.running && Number.isFinite(state.deadline)) remaining = state.phase === 'submitting' ? '提交中' : state.phase === 'checking' ? '核对中' : state.phase === 'stopping' ? '停止中' : Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000)) + ' 秒';
     const fields = {
       'timer-elapsed': formatTimerDuration(elapsed), 'timer-remaining': remaining,
-      'timer-progress': '已完成 ' + (state.completed || 0) + ' / ' + (state.targetCount || 0) + ' 道',
+      'timer-progress': state.repeating ? '重复答题 · 已确认提交 ' + (state.completed || 0) + ' 次' : '已完成 ' + (state.completed || 0) + ' / ' + (state.targetCount || 0) + ' 道',
       'timer-phase': phaseNames[state.phase] || '未启动',
       'timer-task': state.currentTask ? state.currentTask.path.join(' / ') : ui('timer-start-path').textContent || '先在主窗口选择起始练习'
     };
+    ui('timer-total').hidden = !state.repeating;
+    if (state.repeating) ui('timer-total').textContent = '总倒计时：' + formatTimerDuration(Math.ceil(Math.max(0, state.endsAt - now) / 1000));
     for (const [id, text] of Object.entries(fields)) if (ui(id).textContent !== text) ui(id).textContent = text;
   }
   function timerStatus(text) {
@@ -1980,7 +2052,8 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   }
   function selectedTask() {
     const task = COURSE_TASKS[Number(ui('task').value)];
-    if (!task) throw new Error('先选择要填的练习。');
+    if (!task || ui('task').value === '') throw new Error('先读取首页书架，再选择要填的练习。');
+    if (!ownedBooks().includes(taskBook(task))) throw new Error('当前账号的首页书架尚未读到这本教材，请先在首页读取书架。');
     if (taskBook(task) !== activeBook()) throw new Error('所选练习属于“' + taskBook(task) + '”，请先从首页打开这本教材。');
     return task;
   }
@@ -2347,6 +2420,21 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     // 只认当前页面真正出现的答题小结，不把点击过按钮当作提交成功。
     return docs.some(doc => exactTextNodes(doc, '答题小结').length > 0);
   }
+  async function reopenRepeatTask(task) {
+    assertAutoContext(task);
+    assertSubmissionAllowed();
+    const docs = pageDocuments();
+    if (!submissionComplete(docs)) return;
+    const unavailable = message => Object.assign(new Error(message), { code: 'REPEAT_UNAVAILABLE' });
+    const labels = ['重新作答', '重新答题', '再做一次', '重新练习', '再练一次', '重做'];
+    const controls = [...new Set(docs.flatMap(doc => labels.flatMap(label => exactTextNodes(doc, label).map(actionElement))))]
+      .filter(control => !actionDisabled(control));
+    if (controls.length !== 1) throw unavailable('当前题在答题小结中，没有唯一可用的重答入口，跳过此题。');
+    if (autoState.cancelled || Date.now() >= autoState.endsAt) throw new Error('重复答题已停止或总时间已结束。');
+    controls[0].click();
+    if (!await waitFor(() => !submissionComplete(pageDocuments()), 6000)) throw unavailable('点击重答后仍在答题小结，跳过此题。');
+    assertAutoContext(task);
+  }
   async function clickSubmit(report = () => {}, shouldStop = () => false) {
     assertSubmissionAllowed();
     const docs = pageDocuments();
@@ -2423,7 +2511,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     sharedWrite(NAV_CHECK_KEY, checks);
     paintTaskOptions();
   }
-  let accountIdentity = null;
+  var accountIdentity = null;
   const accountSubmittedKey = () => accountIdentity ? SUBMITTED_BY_ACCOUNT + accountIdentity.key : '';
   const PANEL_KEY = 'ucampus-panel-pos';
   const TIMER_PANEL_KEY = 'ucampus-auto-panel-pos/v1';
@@ -2571,10 +2659,15 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   }
   function renderTaskTree(done, current, pageBook = activeBook()) {
     const names = ownedBooks();
-    const books = groupCourseTasks(COURSE_TASKS, done, names);
+    const books = groupCourseTasks(COURSE_TASKS, done, names, true);
     const signature = JSON.stringify([names, COURSE_TASKS.map(task => [task.book || '', task.path])]);
     if (signature !== taskTreeSignature) {
       taskTreeSignature = signature; lastTreeFocus = ''; taskTreeNodes.clear(); ui('task-tree').replaceChildren();
+      if (!names.length) {
+        const empty = document.createElement('small');
+        empty.textContent = '还没读取到当前账号的首页教材。请打开首页「我的教程」，点「读取首页书架」，再回课本页刷新。未在首页读到的内置教材不会显示。';
+        ui('task-tree').appendChild(empty);
+      }
       for (const book of books) {
         const bookNode = document.createElement('details'), bookTitle = document.createElement('summary');
         bookNode.appendChild(bookTitle); ui('task-tree').appendChild(bookNode);
@@ -2641,7 +2734,8 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
         }
       }
     }
-    const selected = COURSE_TASKS[Number(ui('task').value)];
+    const selectedTaskEntry = ui('task').value === '' ? null : COURSE_TASKS[Number(ui('task').value)];
+    const selected = selectedTaskEntry && names.includes(taskBook(selectedTaskEntry)) ? selectedTaskEntry : null;
     const answerText = formatTaskAnswers(selected), pathText = selected ? selected.path.join(' / ') : '请选择练习';
     if (ui('answer-display').value !== answerText) ui('answer-display').value = answerText;
     ui('answer-display').style.height = selected && correctionDetails(selected).length ? '180px' : '112px';
@@ -2659,8 +2753,14 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     }
   }
   function paintTaskOptions(done = readSubmitted(), book = activeBook()) {
+    const visibleBooks = new Set(ownedBooks());
     const hits = currentTaskHits(book);
-    const current = hits.length === 1 ? hits[0] : null;
+    const current = hits.length === 1 && visibleBooks.has(taskBook(hits[0])) ? hits[0] : null;
+    const chosen = ui('task').value === '' ? null : COURSE_TASKS[Number(ui('task').value)];
+    if (!chosen || !visibleBooks.has(taskBook(chosen))) {
+      const first = COURSE_TASKS.findIndex(task => visibleBooks.has(taskBook(task)));
+      ui('task').value = first < 0 ? '' : String(first);
+    }
     const currentKey = current ? taskKey(current.path, current.book) : '';
     const caption = current ? '▶ 当前题：' + current.path.join(' / ') : '当前题：未唯一识别（不影响手选练习）';
     if (ui('current-task').textContent !== caption) ui('current-task').textContent = caption;
@@ -3118,7 +3218,10 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   async function waitFor(read, timeout = 3000) {
     const start = Date.now();
     while (Date.now() - start <= timeout) {
-      if (typeof autoState !== 'undefined' && autoState?.running && autoState.cancelled) throw new Error('定时任务已停止。');
+      if (typeof autoState !== 'undefined' && autoState?.running) {
+        if (autoState.cancelled) throw new Error('定时任务已停止。');
+        if (autoState.repeating && Date.now() >= autoState.endsAt) throw new Error('重复答题总倒计时已结束。');
+      }
       if (jumpCheckState.running && jumpCheckState.cancelled) throw new Error('跳转检查已停止。');
       const value = read();
       if (value) return value;
@@ -3318,8 +3421,12 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   if (typeof window.addEventListener === 'function') window.addEventListener('hashchange', scheduleCatalogRefresh);
   document.addEventListener?.('visibilitychange', () => { if (!document.hidden) scheduleCatalogRefresh(); });
   function autoProgressPreview() {
+    const repeating = ui('auto-repeat').checked;
+    ui('auto-repeat-note').hidden = !repeating;
+    ui('auto-count-label').textContent = repeating ? '节奏题数' : '练习数';
+    ui('auto-scope').disabled = repeating || autoState.running;
     const minutes = Number(ui('auto-minutes').value), count = Number(ui('auto-count').value);
-    ui('auto-preview').textContent = minutes > 0 && count > 0 ? minutes + '分钟做' + count + '道练习，平均每道 ' + (minutes * 60 / count).toFixed(1) + ' 秒；先填，到时间再提交。' : '请输入总分钟数和练习数。';
+    ui('auto-preview').textContent = minutes > 0 && count > 0 ? repeating ? '总时间 ' + minutes + ' 分钟，约每 ' + (minutes * 60 / count).toFixed(1) + ' 秒提交一题；包含已做题，整书循环，时间归零停止。' : minutes + '分钟做' + count + '道练习，平均每道 ' + (minutes * 60 / count).toFixed(1) + ' 秒；先填，到时间再提交。' : '请输入总分钟数和练习数。';
   }
   function assertAutoContext(task) {
     if (!accountIdentity || accountIdentity.key !== autoState.accountKey) throw new Error('账号身份已变化，定时任务已停止。');
@@ -3334,51 +3441,55 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     const selected = selectedTask();
     if (taskBook(selected) !== activeBook()) throw new Error('请先打开所选教材，不会跨书填写。');
     const failedKeys = Object.keys(navigationFailures(taskBook(selected)));
-    const excluded = new Set([...readSubmitted(), ...failedKeys]);
-    const plan = buildAutoPlan(COURSE_TASKS, excluded, selected, ui('auto-scope').value || 'unit', Number(ui('auto-count').value), true);
+    const repeating = ui('auto-repeat').checked;
+    const excluded = new Set([...(repeating ? [] : readSubmitted()), ...failedKeys]);
+    const plan = repeating ? buildRepeatPlan(COURSE_TASKS, excluded, selected) : buildAutoPlan(COURSE_TASKS, excluded, selected, ui('auto-scope').value || 'unit', Number(ui('auto-count').value), true);
     const targetCount = Number(ui('auto-count').value);
     const minutes = Number(ui('auto-minutes').value);
     if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 1440 || minutes * 60000 / targetCount < 1000) throw new Error('分钟数应大于0且不超过1440，平均每道至少1秒。');
-    autoState = { running: true, cancelled: false, accountKey: expectedAccountKey, skipped: [], startedAt: Date.now(), completed: 0, targetCount, phase: 'jumping', shortenedMs: 0, idleSubmitTaskKey: '' };
+    autoState = { running: true, cancelled: false, accountKey: expectedAccountKey, skipped: [], startedAt: Date.now(), repeating, endsAt: Date.now() + minutes * 60000, completed: 0, targetCount, phase: 'jumping', shortenedMs: 0, idleSubmitTaskKey: '' };
     autoState.clockTimer = setInterval(updateTimerMetrics, 1000);
     updateTimerMetrics();
     ui('auto-skipped').textContent = failedKeys.length ? '已按整本教材共享检查结果预先跳过 ' + failedKeys.length + ' 道跳转未找到的练习（不计完成）。' : '';
     ui('auto-start').disabled = true; ui('auto-stop').disabled = false; ui('timer-stop-quick').disabled = false;
-    for (const id of ['auto-minutes', 'auto-count', 'auto-scope']) ui(id).disabled = true;
+    for (const id of ['auto-minutes', 'auto-count', 'auto-scope', 'auto-repeat']) ui(id).disabled = true;
     timerStatus('正在准备定时任务……');
     try {
-      const completed = await executeTimedPlan(plan, minutes, {
-        targetCount, skipJumpFailures: true,
+      const execute = repeating ? executeRepeatPlan : executeTimedPlan;
+      const completed = await execute(plan, minutes, {
+        targetCount, endsAt: autoState.endsAt, skipJumpFailures: true,
         onTask: (task, completed, target, deadline) => { autoState.idleSubmitTaskKey = ''; autoState.currentTask = task; autoState.deadline = deadline; autoState.completed = completed; updateTimerMetrics(); },
         onPhase: phase => { autoState.phase = phase; updateTimerMetrics(); },
         onProgress: completed => { autoState.completed = completed; updateTimerMetrics(); },
         onScheduleShift: (total, saved) => { autoState.shortenedMs = total; autoState.idleSubmitTaskKey = ''; appendActivityLog('闲置提示提前提交，计划跳过等待 ' + Math.ceil(saved / 1000) + ' 秒。'); updateTimerMetrics(); },
         onSkip: (task, error) => {
           autoState.skipped.push(task.path.join(' / ') + '：' + (error?.message || String(error)));
-          saveNavigationResult(task, error);
+          if (error?.code !== 'REPEAT_UNAVAILABLE') saveNavigationResult(task, error);
           appendActivityLog('跳过：' + task.path.join(' / ') + '。原因：' + String(error?.message || error).split(/[。\n]/)[0]);
           ui('auto-skipped').textContent = '跳过记录（不计完成）：\n' + autoState.skipped.join('\n');
         },
         now: () => Date.now(), stopped: () => autoState.cancelled, report: status,
-        jump: task => jumpToTask(task),
+        jump: async task => { await jumpToTask(task); if (repeating) await reopenRepeatTask(task); },
         fill: async task => { assertAutoContext(task); await fillCourseTask(task); },
         waitUntil: async (deadline, task, index, total) => {
           while (Date.now() < deadline) {
             if (autoState.cancelled) throw new Error('定时任务已停止。');
             assertSubmissionAllowed();
-            if (autoState.idleSubmitTaskKey === taskKey(task.path, task.book)) return { early: true };
-            status('第 ' + (index + 1) + '/' + total + ' 道已填写，' + Math.ceil((deadline - Date.now()) / 1000) + ' 秒后提交。');
+            if (task && autoState.idleSubmitTaskKey === taskKey(task.path, task.book)) { autoState.idleSubmitTaskKey = ''; return { early: true }; }
+            if (autoState.repeating && Date.now() >= autoState.endsAt) return;
+            status(task ? '第 ' + (index + 1) + '/' + total + ' 道已填写，' + Math.ceil((deadline - Date.now()) / 1000) + ' 秒后提交。' : '没有可跳转练习，等待总倒计时结束。');
             await new Promise(resolve => setTimeout(resolve, Math.min(1000, Math.max(1, deadline - Date.now()))));
           }
         },
         verify: async task => { await requireAccountIdentity(); assertAutoContext(task); },
-        submit: async () => { await clickSubmit(status, () => autoState.cancelled); },
+        submit: async () => { await clickSubmit(status, () => autoState.cancelled || autoState.repeating && Date.now() >= autoState.endsAt); },
         remember: task => {
           if (accountIdentity?.key !== expectedAccountKey || !rememberSubmitted(task)) throw new Error('提交已完成，但当前账号标记未能保存；已停止后续任务。');
         }
       });
       autoState.phase = 'completed';
-      status('定时任务完成，已确认提交 ' + completed + '/' + targetCount + ' 道练习；跳过 ' + autoState.skipped.length + ' 道跳转失败的练习，详情见跳过记录。');
+      const summary = repeating ? '重复答题总倒计时结束，已确认提交 ' + completed + ' 次；不会再进入下一题或发起提交。' : '定时任务完成，已确认提交 ' + completed + '/' + targetCount + ' 道练习；跳过 ' + autoState.skipped.length + ' 道跳转失败的练习，详情见跳过记录。';
+      status(summary); timerStatus(summary);
     } catch (error) {
       if (autoState.cancelled) { autoState.phase = 'stopped'; const message = autoState.stopReason ? autoState.stopReason + '。定时任务已停止，冷却结束后不会自动继续。' : '定时任务已停止，不再填写或发起提交。已发出的请求无法撤回，请以网页结果为准。'; status(message); timerStatus(message); }
       else { autoState.phase = 'failed'; timerStatus('定时任务未完成：' + (error.message || String(error))); throw error; }
@@ -3386,7 +3497,8 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
       if (typeof clearInterval === 'function' && autoState.clockTimer !== undefined) clearInterval(autoState.clockTimer);
       autoState.finishedAt = Date.now(); autoState.running = false; updateTimerMetrics();
       ui('auto-start').disabled = false; ui('auto-stop').disabled = true; ui('timer-stop-quick').disabled = true;
-      for (const id of ['auto-minutes', 'auto-count', 'auto-scope']) ui(id).disabled = false;
+      for (const id of ['auto-minutes', 'auto-count', 'auto-scope', 'auto-repeat']) ui(id).disabled = false;
+      autoProgressPreview();
     }
   }
   function updateDataNote(done) {
@@ -3445,7 +3557,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     if (announce) status('已合并本页旧数据和扩展共享数据；当前库匹配到 ' + matched + ' 道已提交练习。\n如果仍少：请在原来做题的课本标签页刷新，再点本按钮；首次需从原课本域名迁移。这里只同步记录，不填写、不提交。');
   }
   if (typeof GM_addValueChangeListener === 'function') {
-    for (const key of [IMPORT_KEY, SUBMITTED_KEY, 'ucampus-owned-books/v1']) GM_addValueChangeListener(key, (name, oldValue, value, remote) => {
+    for (const key of [IMPORT_KEY, SUBMITTED_KEY]) GM_addValueChangeListener(key, (name, oldValue, value, remote) => {
       if (!remote) return;
       try { syncStoredData(); } catch (error) { status('共享数据读取失败：' + error.message); }
     });
@@ -3490,6 +3602,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   }, { alertOnError: true, actionName: '绑定课本账号' });
   ui('read-books').onclick = run(async () => readShelf());
   ui('auto-minutes').oninput = autoProgressPreview; ui('auto-count').oninput = autoProgressPreview;
+  ui('auto-repeat').onchange = autoProgressPreview;
   ui('auto-start').onclick = run(async () => {
     try { await startTimedTask(); } catch (error) { timerStatus('定时任务未完成：' + (error.message || String(error))); throw error; }
   }, { alertOnError: true, actionName: '定时填写提交' });
