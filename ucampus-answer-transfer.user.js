@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         U校园 · 我的答案搬运助手
 // @namespace    local.ucampus.answer-transfer
-// @version      0.4.11
+// @version      0.4.12
 // @description  按本人整理的答案填写当前练习，并点击页面上的提交节点。只填已给出的答案。
 // @match        https://uai.unipus.cn/*
 // @match        https://ucontent.unipus.cn/*
@@ -21,7 +21,7 @@
 
 (() => {
   'use strict';
-  const SCRIPT_VERSION = '0.4.11';
+  const SCRIPT_VERSION = '0.4.12';
   const UPDATE_ROUTES = {
     server: 'https://dl.keon5223.xyz/ucampus-answer-transfer.user.js',
     github: 'https://raw.githubusercontent.com/keonxyz5223-beep/ucampus-answer-transfer/main/ucampus-answer-transfer.user.js'
@@ -190,7 +190,8 @@
     return [...new Set([...CONFIRMED_BOOKS, ...ownedBooks(), ...COURSE_TASKS.map(taskBook)])];
   }
   function isShelfPage() {
-    return !!(typeof window !== 'undefined' && window.location && window.location.hostname === 'ucloud.unipus.cn' && /^\/portal\/?$/.test(window.location.pathname));
+    return !!(typeof window !== 'undefined' && window.location &&
+      ['uai.unipus.cn', 'ucloud.unipus.cn'].includes(window.location.hostname) && /^\/portal\/?$/.test(window.location.pathname));
   }
   function booksInText(value, names = knownBookNames()) {
     const text = compactLabel(value);
@@ -212,7 +213,12 @@
   }
   function readShelf(quiet = false) {
     const found = shelfBooksFromPage();
-    if (!found.length) { if (!quiet) throw new Error('请在U校园首页“我的教程”显示教材后，再点“读取首页书架”。'); return []; }
+    if (!found.length) {
+      if (!quiet) throw new Error(isShelfPage()
+        ? '已在U校园首页，但暂未读到教材名称。请等“我的教程”卡片加载出来，再读取书架。'
+        : '请先进入U校园首页“我的教程”，再点“读取首页书架”。');
+      return [];
+    }
     const key = shelfStorageKey();
     if (!key) { if (!quiet) throw new Error('首页账号还没识别，暂不保存书架。请等个人资料加载后重试。'); return []; }
     const merged = [...new Set([...ownedBooks(), ...found])];
