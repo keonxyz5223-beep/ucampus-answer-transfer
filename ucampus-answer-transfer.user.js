@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         U校园 · 我的答案搬运助手
 // @namespace    local.ucampus.answer-transfer
-// @version      0.4.1
+// @version      0.4.2
 // @description  按本人整理的答案填写当前练习，并点击页面上的提交节点。只填已给出的答案。
 // @match        https://uai.unipus.cn/*
 // @match        https://ucontent.unipus.cn/*
@@ -21,7 +21,7 @@
 
 (() => {
   'use strict';
-  const SCRIPT_VERSION = '0.4.1';
+  const SCRIPT_VERSION = '0.4.2';
   const UPDATE_ROUTES = {
     server: 'https://dl.keon5223.xyz/ucampus-answer-transfer.user.js',
     github: 'https://raw.githubusercontent.com/keonxyz5223-beep/ucampus-answer-transfer/main/ucampus-answer-transfer.user.js'
@@ -1533,7 +1533,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 .window-links{display:grid;grid-template-columns:1fr 1fr;gap:8px}.log-window{position:fixed;right:784px;top:32px;width:340px;max-height:360px;z-index:2147483646}.log-window header{padding:13px;gap:8px}.log-window .brand-copy strong{font-size:15px}#log-clear,#log-close{padding:6px 8px;font-size:10px;color:#71839e;border-color:#e0e7f2}#log-body{padding:0 12px 12px;min-height:0;overflow:hidden}#log-list{height:235px;max-height:calc(100vh - 190px);overflow:auto;border:1px solid #e0e8f5;border-radius:10px;background:#fff;padding:9px 10px;color:#5b7195;font-size:11px;line-height:1.9;scrollbar-width:thin;margin:0}#log-body small{font-size:9px;margin-top:7px}
 </style>
 <section aria-label="U校园答案搬运助手">
-<header><div class="brand-mark">U</div><div class="brand-copy"><span>U校园 · 学习工具</span><strong>答案搬运助手 <b class="version">v0.4.0</b></strong></div><button id="toggle" title="收起或展开助手">收起</button></header>
+<header><div class="brand-mark">U</div><div class="brand-copy"><span>U校园 · 学习工具</span><strong>答案搬运助手 <b class="version">v${SCRIPT_VERSION}</b></strong></div><button id="toggle" title="收起或展开助手">收起</button></header>
 <div class="current-banner"><small id="current-task">当前题：识别中</small></div>
 <div id="body">
 <div class="card">
