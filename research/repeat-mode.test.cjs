@@ -41,6 +41,25 @@ function clockDeps(overrides = {}) {
   assert.equal(await executeRepeatPlan(plan, 1, early.deps), 11);
   assert.ok(early.submitted.length > early.deps.targetCount, 'count is pacing, not cap');
   assert.equal(early.deps.now(), 60000);
+  const earlyPerturb = clockDeps({ perturbationMs: () => 9000 });
+  let earlyCursor = 0;
+  earlyPerturb.deps.waitUntil = async deadline => { earlyCursor = Math.min(deadline, earlyCursor + 5000); earlyPerturb.setClock(earlyCursor); return { early: true }; };
+  assert.equal(await executeRepeatPlan(plan, 1, earlyPerturb.deps), 11);
+  assert.equal(earlyPerturb.deps.now(), 60000, 'idle during the slot skips perturbation and does not extend the countdown');
+  const perturbed = clockDeps({ perturbationMs: () => 5000 });
+  assert.equal(await executeRepeatPlan(plan, 1, perturbed.deps), 5);
+  assert.deepEqual(perturbed.submitted.map(item => item[1]), [15000, 30000, 45000, 60000, 75000]);
+  assert.equal(perturbed.deps.now(), 85000, 'finished perturbation is outside the countdown');
+  const cut = clockDeps({ perturbationMs: () => 10000 });
+  let waits = 0;
+  cut.deps.waitUntil = async deadline => {
+    waits += 1;
+    if (waits === 2) { cut.setClock(deadline - 4000); return { early: true }; }
+    cut.setClock(deadline);
+  };
+  assert.equal(await executeRepeatPlan(plan, 1, cut.deps), 5);
+  assert.deepEqual(cut.submitted.map(item => item[1]), [16000, 36000, 56000, 76000, 96000]);
+  assert.equal(cut.deps.now(), 106000, 'unused perturbation is not added to the countdown');
   const jumpFailure = clockDeps();
   jumpFailure.deps.jump = async task => { jumpFailure.jumped.push(task.path.at(-1)); if (task.path.at(-1) === 'Exercise 2') throw Error('目录未找到'); };
   assert.equal(await executeRepeatPlan(plan, 1, jumpFailure.deps), 5);
@@ -85,15 +104,17 @@ function clockDeps(overrides = {}) {
   // Completed pages must expose one real redo control; no blind clicks.
   const source = fs.readFileSync(require('node:path').join(__dirname, '..', 'ucampus-answer-transfer.user.js'), 'utf8');
   const begin = source.indexOf('  async function reopenRepeatTask('), end = source.indexOf('  async function clickSubmit(', begin);
+  const helperAt = source.indexOf('  function repeatTimeUp(');
+  const helper = source.slice(helperAt, source.indexOf('\n  }', helperAt) + 4);
   for (const n of [0, 1, 2]) {
     let summary = true, clicks = 0;
     const controls = Array.from({ length: n }, () => ({ click() { clicks++; summary = false; } }));
     const box = { assertAutoContext() {}, assertSubmissionAllowed() {}, pageDocuments: () => [{}], submissionComplete: () => summary,
       exactTextNodes: (doc, label) => label === '重新作答' ? controls : [], actionElement: element => element,
-      actionDisabled: () => false, autoState: { cancelled: false, endsAt: 60000 }, Date: { now: () => 0 }, waitFor: async read => read() };
-    vm.createContext(box); vm.runInContext(source.slice(begin, end) + '\nthis.reopen = reopenRepeatTask;', box);
+      actionDisabled: () => false, autoState: { repeating: true, cancelled: false, endsAt: 60000 }, Date: { now: () => 0 }, waitFor: async read => read() };
+    vm.createContext(box); vm.runInContext(helper + '\n' + source.slice(begin, end) + '\nthis.reopen = reopenRepeatTask;', box);
     if (n === 1) { await box.reopen(tasks[0]); assert.equal(clicks, 1); }
     else { await assert.rejects(box.reopen(tasks[0]), error => error.code === 'REPEAT_UNAVAILABLE'); assert.equal(clicks, 0); }
   }
-  console.log('PASS repeat: book order and wrap, completed items included, jump/fill/submit failures skip, total cutoff, read retries at 1s 2s 3s, protection stop, exact redo controls');
+  console.log('PASS repeat: book order and wrap, completed items included, jump/fill/submit failures skip, total cutoff, perturbation outside the countdown, read retries at 1s 2s 3s, protection stop, exact redo controls');
 })().catch(error => { console.error(error); process.exitCode = 1; });

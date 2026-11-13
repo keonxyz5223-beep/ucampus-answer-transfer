@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         U校园 · 我的答案搬运助手
 // @namespace    local.ucampus.answer-transfer
-// @version      0.4.15
+// @version      0.4.16
 // @description  按本人整理的答案填写当前练习，并点击页面上的提交节点。只填已给出的答案。
 // @match        https://uai.unipus.cn/*
 // @match        https://ucontent.unipus.cn/*
@@ -20,7 +20,7 @@
 
 (() => {
   'use strict';
-  const SCRIPT_VERSION = '0.4.15';
+  const SCRIPT_VERSION = '0.4.16';
   const RELEASE_METADATA_URL = 'https://dl.keon5223.xyz/api/version/ucampus';
   const DOWNLOAD_PORTAL_URL = 'https://dl.keon5223.xyz/download?software=ucampus';
   // 由官网下载服务为每次授权安装替换；公开仓库只含占位符，不含真实凭据。
@@ -307,7 +307,8 @@
   async function executeRepeatPlan(plan, minutes, deps) {
     const count = deps.targetCount;
     if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 1440 || !Number.isInteger(count) || count < 1 || count > 500) throw new Error('请设置有效的总分钟数和1至500的节奏题数。');
-    const slot = minutes * 60000 / count, end = deps.endsAt ?? deps.now() + minutes * 60000;
+    const slot = minutes * 60000 / count;
+    let end = deps.endsAt ?? deps.now() + minutes * 60000;
     if (slot < 1000 || !plan.tasks?.length) throw new Error('重复答题需要可用练习，平均每道至少1秒。');
     const failed = new Set();
     let cursor = plan.startIndex, completed = 0;
@@ -336,11 +337,31 @@
           continue;
         }
         if (deps.now() >= end) break;
+        let perturbMs = 0;
+        if (deps.perturbationMs) {
+          const rolled = Number(deps.perturbationMs(task));
+          if (Number.isFinite(rolled) && rolled > 0) perturbMs = rolled;
+          deps.onPerturb?.(perturbMs);
+        }
         try {
           deps.onPhase?.('filling'); await deps.fill(task); check();
           if (deps.now() >= end) break;
-          deps.onPhase?.('waiting'); await deps.waitUntil(deadline, task, completed, count); check();
+          deps.onPhase?.('waiting');
+          const waited = await deps.waitUntil(deadline, task, completed, count); check();
           if (deps.now() >= end) break;
+          if (waited?.early !== true && perturbMs > 0) {
+            const perturbDeadline = deps.now() + perturbMs;
+            deps.onPhase?.('perturbing');
+            deps.onTask?.(task, completed, count, perturbDeadline);
+            deps.onRepeatHold?.(Math.max(0, end - deps.now()));
+            end += perturbMs;
+            deps.onRepeatCredit?.(perturbMs);
+            const perturb = await deps.waitUntil(perturbDeadline, task, completed, count); check();
+            const unused = Math.max(0, perturbDeadline - deps.now());
+            if (unused) { end -= unused; deps.onRepeatCredit?.(-unused); }
+            if (perturb?.early === true) deps.report?.('长时间未操作，已结束这一题的随机扰动。');
+            if (deps.now() >= end) break;
+          }
           deps.onPhase?.('checking'); await deps.verify(task); check();
           if (deps.now() >= end) break;
           deps.onPhase?.('submitting'); await deps.submit(task); check();
@@ -1861,7 +1882,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 <div class="card"><div id="auto-panel">
 <div class="number-grid"><label>总分钟数<input id="auto-minutes" type="number" min="0.1" max="1440" step="0.1" value="5"></label><label><span id="auto-count-label">练习数</span><input id="auto-count" type="number" min="1" max="500" step="1" value="5"></label></div>
 <label class="idle-confirm-option"><input id="auto-repeat" type="checkbox">重复答题（包含已做题，整本循环至倒计时结束）</label><small id="auto-repeat-note" hidden>从所选题开始，走到书末后从本书第一题继续。练习数只用于计算间隔；跳转失败或三次都读不到就跳过。闲置提示可提前提交，但重复模式的总时间不缩短。</small>
-<label class="idle-confirm-option"><input id="auto-perturb" type="checkbox">随机扰动（每题单独加一段等待）</label><div class="number-grid"><label>扰动上限（秒）<input id="auto-perturb-seconds" type="number" min="1" max="500" step="1" value="100"></label></div><small id="auto-perturb-note">每题在自己的分配时间后，再等 0 到所填秒数。不计入总时间，也不平分。长时间未操作会结束这一题的扰动并提交，下一题重新抽。重复答题不加扰动。</small>
+<label class="idle-confirm-option"><input id="auto-perturb" type="checkbox">随机扰动（每题单独加一段等待）</label><div class="number-grid"><label>扰动上限（秒）<input id="auto-perturb-seconds" type="number" min="1" max="500" step="1" value="100"></label></div><small id="auto-perturb-note">每题在自己的分配时间后，再等 0 到所填秒数。不计入总时间，也不平分。长时间未操作会结束这一题的扰动并提交，下一题重新抽。重复答题同样另加这一段，总倒计时在扰动期间停住。</small>
 <select id="auto-scope"><option value="unit">从所选题往后 · 当前单元</option><option value="book">从所选题往后 · 当前教材</option></select>
 <small id="auto-preview">5分钟做5道练习，平均1分钟一道。先填，到时间再提交。</small><div class="auto-actions"><button id="auto-start">开始定时任务</button><button id="auto-stop" disabled>停止</button></div>
 <small>每题是一整页练习。跳转成功后第1、2、3秒各读一次，读到就填；三次都读不到就下一题。请保持页面打开，电脑不要休眠。</small><pre id="auto-skipped" aria-label="跳转失败记录"></pre></div></div>
@@ -1933,12 +1954,14 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
       'timer-perturb': perturbCaption(state)
     };
     ui('timer-total').hidden = !state.repeating;
-    if (state.repeating) ui('timer-total').textContent = '总倒计时：' + formatTimerDuration(Math.ceil(Math.max(0, state.endsAt - now) / 1000));
+    if (state.repeating) {
+      const credit = state.repeatCreditMs || 0;
+      const remainingMs = state.phase === 'perturbing' && Number.isFinite(state.repeatFrozenMs) ? state.repeatFrozenMs : state.endsAt + credit - now;
+      ui('timer-total').textContent = '总倒计时：' + formatTimerDuration(Math.ceil(Math.max(0, remainingMs) / 1000));
+    }
     for (const [id, text] of Object.entries(fields)) if (ui(id).textContent !== text) ui(id).textContent = text;
   }
   function perturbCaption(state) {
-    const repeating = state.running ? !!state.repeating : !!ui('auto-repeat').checked;
-    if (repeating) return '重复答题不加扰动';
     if (!ui('auto-perturb').checked) return '扰动未开启';
     if (Number.isFinite(state.perturbMs)) return '本题扰动 ' + Math.round(state.perturbMs / 1000) + ' 秒';
     const max = Number(ui('auto-perturb-seconds').value) || 0;
@@ -2095,6 +2118,9 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   let checkedText = null;
   let busy = false;
   var autoState = { running: false, cancelled: false };
+  function repeatTimeUp(now = Date.now()) {
+    return !!(autoState?.repeating && now >= (autoState.endsAt || 0) + (autoState.repeatCreditMs || 0));
+  }
   let jumpCheckState = { running: false, cancelled: false };
   let shelfScanAt = 0;
   function visible(element) {
@@ -2582,7 +2608,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     const controls = [...new Set(docs.flatMap(doc => labels.flatMap(label => exactTextNodes(doc, label).map(actionElement))))]
       .filter(control => !actionDisabled(control));
     if (controls.length !== 1) throw unavailable('当前题在答题小结中，没有唯一可用的重答入口，跳过此题。');
-    if (autoState.cancelled || Date.now() >= autoState.endsAt) throw new Error('重复答题已停止或总时间已结束。');
+    if (autoState.cancelled || repeatTimeUp()) throw new Error('重复答题已停止或总时间已结束。');
     controls[0].click();
     if (!await waitFor(() => !submissionComplete(pageDocuments()), 6000)) throw unavailable('点击重答后仍在答题小结，跳过此题。');
     assertAutoContext(task);
@@ -3344,7 +3370,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     while (Date.now() - start <= timeout) {
       if (typeof autoState !== 'undefined' && autoState?.running) {
         if (autoState.cancelled) throw new Error('定时任务已停止。');
-        if (autoState.repeating && Date.now() >= autoState.endsAt) throw new Error('重复答题总倒计时已结束。');
+        if (repeatTimeUp()) throw new Error('重复答题总倒计时已结束。');
         if (autoState.jumpDeadline && Date.now() >= autoState.jumpDeadline) throw new Error('跳转超过10秒，没有打开。');
       }
       if (jumpCheckState.running && jumpCheckState.cancelled) throw new Error('跳转检查已停止。');
@@ -3548,16 +3574,16 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   document.addEventListener?.('visibilitychange', () => { if (!document.hidden) scheduleCatalogRefresh(); });
   function autoProgressPreview() {
     const repeating = ui('auto-repeat').checked;
-    const perturb = ui('auto-perturb').checked && !repeating;
+    const perturb = ui('auto-perturb').checked;
     ui('auto-repeat-note').hidden = !repeating;
-    ui('auto-perturb').disabled = repeating || autoState.running;
+    ui('auto-perturb').disabled = autoState.running;
     ui('auto-perturb-seconds').disabled = !perturb || autoState.running;
-    ui('auto-perturb-note').hidden = repeating;
+    ui('auto-perturb-note').hidden = false;
     ui('auto-count-label').textContent = repeating ? '节奏题数' : '练习数';
     ui('auto-scope').disabled = repeating || autoState.running;
     const minutes = Number(ui('auto-minutes').value), count = Number(ui('auto-count').value);
-    const perturbText = perturb ? ' 每题另加 0–' + (Number(ui('auto-perturb-seconds').value) || 0) + ' 秒随机扰动。' : '';
-    ui('auto-preview').textContent = minutes > 0 && count > 0 ? repeating ? '总时间 ' + minutes + ' 分钟，约每 ' + (minutes * 60 / count).toFixed(1) + ' 秒提交一题；包含已做题，整书循环，时间归零停止。' : minutes + '分钟做' + count + '道练习，平均每道 ' + (minutes * 60 / count).toFixed(1) + ' 秒；先填，到时间再提交。跳转失败最多扣10秒，剩余时间再平分。' + perturbText : '请输入总分钟数和练习数。';
+    const perturbText = perturb ? ' 每题另加 0–' + (Number(ui('auto-perturb-seconds').value) || 0) + ' 秒随机扰动，不计入总时间。' : '';
+    ui('auto-preview').textContent = minutes > 0 && count > 0 ? repeating ? '总时间 ' + minutes + ' 分钟，约每 ' + (minutes * 60 / count).toFixed(1) + ' 秒提交一题；包含已做题，整书循环，时间归零停止。' + perturbText : minutes + '分钟做' + count + '道练习，平均每道 ' + (minutes * 60 / count).toFixed(1) + ' 秒；先填，到时间再提交。跳转失败最多扣10秒，剩余时间再平分。' + perturbText : '请输入总分钟数和练习数。';
     updateTimerMetrics();
   }
   function assertAutoContext(task) {
@@ -3578,7 +3604,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     const plan = repeating ? buildRepeatPlan(COURSE_TASKS, excluded, selected) : buildAutoPlan(COURSE_TASKS, excluded, selected, ui('auto-scope').value || 'unit', Number(ui('auto-count').value), false);
     const targetCount = Number(ui('auto-count').value);
     const minutes = Number(ui('auto-minutes').value);
-    const perturbOn = !repeating && ui('auto-perturb').checked;
+    const perturbOn = ui('auto-perturb').checked;
     const perturbMax = Number(ui('auto-perturb-seconds').value);
     if (perturbOn && (!Number.isInteger(perturbMax) || perturbMax < 1 || perturbMax > 500)) throw new Error('随机扰动请填写1至500的整数秒。');
     if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 1440 || minutes * 60000 / targetCount < (repeating ? 1000 : 10000)) throw new Error(repeating ? '分钟数应大于0且不超过1440，平均每道至少1秒。' : '分钟数应大于0且不超过1440，平均每道至少10秒。');
@@ -3594,8 +3620,10 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
       const completed = await execute(plan, minutes, {
         targetCount, endsAt: autoState.endsAt, skipJumpFailures: true,
         onTask: (task, completed, target, deadline) => { autoState.idleSubmitTaskKey = ''; autoState.currentTask = task; autoState.deadline = deadline; autoState.completed = completed; updateTimerMetrics(); },
-        onPhase: phase => { autoState.phase = phase; if (phase === 'jumping') autoState.perturbMs = null; updateTimerMetrics(); },
+        onPhase: phase => { autoState.phase = phase; if (phase === 'jumping') autoState.perturbMs = null; if (phase !== 'perturbing') autoState.repeatFrozenMs = null; updateTimerMetrics(); },
         onProgress: completed => { autoState.completed = completed; updateTimerMetrics(); },
+        onRepeatHold: ms => { autoState.repeatFrozenMs = ms; updateTimerMetrics(); },
+        onRepeatCredit: ms => { autoState.repeatCreditMs = (autoState.repeatCreditMs || 0) + ms; updateTimerMetrics(); },
         onScheduleShift: (total, saved) => { autoState.shortenedMs = total; autoState.idleSubmitTaskKey = ''; appendActivityLog('闲置提示提前提交，退回分配时间 ' + Math.ceil(saved / 1000) + ' 秒，后续题目重新平分。'); updateTimerMetrics(); },
         onPerturb: ms => { autoState.perturbMs = ms; updateTimerMetrics(); },
         onSkip: (task, error) => {
@@ -3613,7 +3641,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
         },
         fill: task => fillWhenPageReady({
           now: () => Date.now(),
-          stopped: () => autoState.cancelled || (repeating && Date.now() >= autoState.endsAt),
+          stopped: () => autoState.cancelled || repeatTimeUp(),
           sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
           onAttempt: attempt => { autoState.phase = 'settling'; updateTimerMetrics(); timerStatus('跳转成功后第 ' + attempt + ' 秒读取页面。'); },
           fill: async () => { assertAutoContext(task); return fillCourseTask(task); }
@@ -3623,13 +3651,13 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
             if (autoState.cancelled) throw new Error('定时任务已停止。');
             assertSubmissionAllowed();
             if (task && autoState.idleSubmitTaskKey === taskKey(task.path, task.book)) { autoState.idleSubmitTaskKey = ''; return { early: true }; }
-            if (autoState.repeating && Date.now() >= autoState.endsAt) return;
+            if (repeatTimeUp()) return;
             status(task ? '第 ' + (index + 1) + '/' + total + ' 道已填写，' + Math.ceil((deadline - Date.now()) / 1000) + ' 秒后提交。' : '没有可跳转练习，等待总倒计时结束。');
             await new Promise(resolve => setTimeout(resolve, Math.min(1000, Math.max(1, deadline - Date.now()))));
           }
         },
         verify: async task => { await requireAccountIdentity(); assertAutoContext(task); },
-        submit: async () => { await clickSubmit(status, () => autoState.cancelled || autoState.repeating && Date.now() >= autoState.endsAt); },
+        submit: async () => { await clickSubmit(status, () => autoState.cancelled || repeatTimeUp()); },
         remember: task => {
           if (accountIdentity?.key !== expectedAccountKey || !rememberSubmitted(task)) throw new Error('提交已完成，但当前账号标记未能保存；已停止后续任务。');
         }
