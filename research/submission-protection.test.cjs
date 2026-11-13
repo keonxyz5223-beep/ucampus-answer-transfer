@@ -102,8 +102,8 @@ async function main() {
   assert.deepEqual(submissions, [60000, 120000, 150000, 225000, 300000]);
   assert.equal(saved, 30000, '2:30 idle returns 30s to the remaining two questions');
   let submits = 0;
-  await assert.rejects(executeTimedPlan(plan, 5, { ...deps, now: () => 0, fill: async () => { throw Error('填写失败'); }, submit: async () => submits++ }), /填写失败/);
-  assert.equal(submits, 0);
+  assert.equal(await executeTimedPlan(plan, 5, { ...deps, now: () => 0, fill: async () => { throw Error('填写失败'); }, submit: async () => submits++ }), 0);
+  assert.equal(submits, 0, 'a fill mismatch skips the question instead of stopping the timer');
   let cancelled = false;
   await assert.rejects(executeTimedPlan(plan, 5, { ...deps, now: () => 0, stopped: () => cancelled, waitUntil: async () => { cancelled = true; return { early: true }; }, submit: async () => submits++ }), /已停止/);
   assert.equal(submits, 0, 'cooldown cancellation wins over idle early-submit');

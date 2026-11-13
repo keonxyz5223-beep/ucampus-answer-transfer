@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const api = require('../ucampus-answer-transfer.user.js');
-const { buildRepeatPlan, executeRepeatPlan, taskKey, buildAutoPlan } = api;
+const { buildRepeatPlan, executeRepeatPlan, taskKey, buildAutoPlan, fillWhenPageReady } = api;
 const tasks = [1, 2, 3].map(n => ({ book: 'Book A', path: ['Unit 1', 'Exercise ' + n], kind: 'choice', answers: ['A'] }));
 tasks.push({ book: 'Book B', path: ['Unit 1', 'Exercise 1'], kind: 'choice', answers: ['B'] });
 const plan = buildRepeatPlan(tasks, new Set(), tasks[1]);
@@ -55,11 +55,28 @@ function clockDeps(overrides = {}) {
   assert.equal(await executeRepeatPlan(plan, 1, lateVerify.deps), 0);
   assert.equal(lateVerify.submitted.length, 0);
   const fillFail = clockDeps(); fillFail.deps.fill = async () => { throw Error('填写失败'); };
-  await assert.rejects(executeRepeatPlan(plan, 1, fillFail.deps), /填写失败/);
+  assert.equal(await executeRepeatPlan(plan, 1, fillFail.deps), 0);
   assert.equal(fillFail.submitted.length, 0);
+  assert.equal(fillFail.deps.now(), 60000, 'a fill mismatch skips the question and keeps the timer');
   const submitFail = clockDeps(); submitFail.deps.submit = async () => { throw Error('提交失败'); };
-  await assert.rejects(executeRepeatPlan(plan, 1, submitFail.deps), /提交失败/);
+  assert.equal(await executeRepeatPlan(plan, 1, submitFail.deps), 0);
   assert.equal(submitFail.remembered.length, 0);
+  assert.equal(submitFail.deps.now(), 60000);
+  const reads = [];
+  let readyNow = 0;
+  const ready = await fillWhenPageReady({
+    now: () => readyNow, stopped: () => false, sleep: async ms => { readyNow += ms; },
+    fill: async () => { reads.push(readyNow); if (reads.length < 2) throw Error('页面有 0 个空，答案有 4 个，已停止。'); return 'filled'; }
+  });
+  assert.equal(ready, 'filled');
+  assert.deepEqual(reads, [1000, 2000]);
+  const missed = [];
+  let missedNow = 0;
+  await assert.rejects(fillWhenPageReady({
+    now: () => missedNow, stopped: () => false, sleep: async ms => { missedNow += ms; },
+    fill: async () => { missed.push(missedNow); throw Error('页面有 0 个空，答案有 4 个，已停止。'); }
+  }), error => error.code === 'QUESTION_SKIP');
+  assert.deepEqual(missed, [1000, 2000, 3000]);
   let cancelled = false;
   const protection = clockDeps({ stopped: () => cancelled });
   protection.deps.waitUntil = async () => { cancelled = true; };
@@ -78,5 +95,5 @@ function clockDeps(overrides = {}) {
     if (n === 1) { await box.reopen(tasks[0]); assert.equal(clicks, 1); }
     else { await assert.rejects(box.reopen(tasks[0]), error => error.code === 'REPEAT_UNAVAILABLE'); assert.equal(clicks, 0); }
   }
-  console.log('PASS repeat: book order and wrap, completed items included, failures skipped, total cutoff, pacing count not cap, protection/fill/submit stop, exact redo controls');
+  console.log('PASS repeat: book order and wrap, completed items included, jump/fill/submit failures skip, total cutoff, read retries at 1s 2s 3s, protection stop, exact redo controls');
 })().catch(error => { console.error(error); process.exitCode = 1; });

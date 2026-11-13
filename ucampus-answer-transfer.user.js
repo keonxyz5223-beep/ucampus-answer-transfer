@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         U校园 · 我的答案搬运助手
 // @namespace    local.ucampus.answer-transfer
-// @version      0.4.14
+// @version      0.4.15
 // @description  按本人整理的答案填写当前练习，并点击页面上的提交节点。只填已给出的答案。
 // @match        https://uai.unipus.cn/*
 // @match        https://ucontent.unipus.cn/*
@@ -20,7 +20,7 @@
 
 (() => {
   'use strict';
-  const SCRIPT_VERSION = '0.4.14';
+  const SCRIPT_VERSION = '0.4.15';
   const RELEASE_METADATA_URL = 'https://dl.keon5223.xyz/api/version/ucampus';
   const DOWNLOAD_PORTAL_URL = 'https://dl.keon5223.xyz/download?software=ucampus';
   // 由官网下载服务为每次授权安装替换；公开仓库只含占位符，不含真实凭据。
@@ -271,6 +271,39 @@
     const first = candidates.findIndex(({ index }) => index >= start);
     return { tasks: candidates.map(({ task }) => ({ ...task, path: task.path.slice(), answers: task.answers.slice() })), startIndex: first < 0 ? 0 : first };
   }
+  function isTimedSessionAbort(error) {
+    const message = String(error?.message || error);
+    return /定时任务已停止|账号身份已变化|与任务教材不同|离开计划中的练习|提交过于快了|休息会再提交|标记未能保存/.test(message);
+  }
+  function skipTimedQuestion(error) {
+    if (!error || typeof error !== 'object') error = new Error(String(error));
+    if (!error.code) error.code = 'QUESTION_SKIP';
+    return error;
+  }
+  function isUnreadPage(error) {
+    const message = String(error?.message || error);
+    return /页面有 \d+ 个空|页面有 \d+ 组选项|当前页没有找到选项|没有唯一对上或不可编辑/.test(message);
+  }
+  async function fillWhenPageReady(deps) {
+    const started = deps.now();
+    let lastError;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const due = started + attempt * 1000;
+      while (deps.now() < due) {
+        if (deps.stopped()) throw new Error('定时任务已停止。');
+        await deps.sleep(Math.max(1, Math.min(200, due - deps.now())));
+      }
+      if (deps.stopped()) throw new Error('定时任务已停止。');
+      deps.onAttempt?.(attempt);
+      try { return await deps.fill(); }
+      catch (error) {
+        if (deps.stopped()) throw new Error('定时任务已停止。');
+        if (isTimedSessionAbort(error) || !isUnreadPage(error)) throw error;
+        lastError = error;
+      }
+    }
+    throw skipTimedQuestion(lastError || new Error('三次都没有读到题目。'));
+  }
   async function executeRepeatPlan(plan, minutes, deps) {
     const count = deps.targetCount;
     if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 1440 || !Number.isInteger(count) || count < 1 || count > 500) throw new Error('请设置有效的总分钟数和1至500的节奏题数。');
@@ -303,15 +336,23 @@
           continue;
         }
         if (deps.now() >= end) break;
-        deps.onPhase?.('filling'); await deps.fill(task); check();
-        if (deps.now() >= end) break;
-        deps.onPhase?.('waiting'); await deps.waitUntil(deadline, task, completed, count); check();
-        if (deps.now() >= end) break;
-        deps.onPhase?.('checking'); await deps.verify(task); check();
-        if (deps.now() >= end) break;
-        deps.onPhase?.('submitting'); await deps.submit(task); check();
-        deps.remember(task); completed++; deps.onProgress?.(completed);
-        deps.report('重复答题已确认提交 ' + completed + ' 次；继续按本书顺序循环，直至总时间结束。');
+        try {
+          deps.onPhase?.('filling'); await deps.fill(task); check();
+          if (deps.now() >= end) break;
+          deps.onPhase?.('waiting'); await deps.waitUntil(deadline, task, completed, count); check();
+          if (deps.now() >= end) break;
+          deps.onPhase?.('checking'); await deps.verify(task); check();
+          if (deps.now() >= end) break;
+          deps.onPhase?.('submitting'); await deps.submit(task); check();
+          deps.remember(task); completed++; deps.onProgress?.(completed);
+          deps.report('重复答题已确认提交 ' + completed + ' 次；继续按本书顺序循环，直至总时间结束。');
+        } catch (error) {
+          if (deps.stopped()) throw new Error('定时任务已停止。');
+          if (deps.now() >= end) break;
+          if (isTimedSessionAbort(error)) throw error;
+          failed.add(key); deps.onSkip?.(task, skipTimedQuestion(error), failed.size);
+          continue;
+        }
       }
     } catch (error) {
       check();
@@ -363,34 +404,52 @@
         deps.report?.('已跳过跳转失败的练习：' + task.path.join(' / ') + '；剩余时间重新平分。');
         continue;
       }
-      deps.onPhase?.('filling');
-      await deps.fill(task); check();
-      if (deps.now() > deadline) throw new Error('第 ' + (completed + 1) + ' 道加载或填写超过分配时间，已停止，没有赶时间连交。');
-      deps.onPhase?.('waiting');
-      const waited = await deps.waitUntil(deadline, task, completed, target); check();
-      if (waited?.early === true) {
-        const saved = Math.max(0, deadline - deps.now());
-        budgetMs -= Math.max(0, slot - saved);
-        shortened += saved;
-        deps.onScheduleShift?.(shortened, saved);
-      } else {
-        budgetMs -= slot;
-        const extra = Number(deps.perturbationMs?.(task));
-        if (Number.isFinite(extra) && extra > 0) {
-          const perturbDeadline = deps.now() + extra;
-          deps.onPhase?.('perturbing');
-          deps.onTask?.(task, completed, target, perturbDeadline);
-          const perturb = await deps.waitUntil(perturbDeadline, task, completed, target); check();
-          if (perturb?.early === true) deps.report?.('长时间未操作，已结束这一题的随机扰动。');
-        }
+      let perturbMs = 0;
+      if (deps.perturbationMs) {
+        const rolled = Number(deps.perturbationMs(task));
+        if (Number.isFinite(rolled) && rolled > 0) perturbMs = rolled;
+        deps.onPerturb?.(perturbMs);
       }
-      deps.onPhase?.('checking');
-      await deps.verify(task); check();
-      deps.onPhase?.('submitting');
-      await deps.submit(task);
-      deps.remember(task); completed++;
-      deps.onProgress?.(completed);
-      deps.report?.('已提交 ' + completed + '/' + target + ' 道，已跳过 ' + skipped + ' 道跳转失败的练习。');
+      let charged = false;
+      try {
+        deps.onPhase?.('filling');
+        await deps.fill(task); check();
+        if (deps.now() > deadline) throw new Error('第 ' + (completed + 1) + ' 道加载或填写超过分配时间，跳过这一题，没有赶时间连交。');
+        deps.onPhase?.('waiting');
+        const waited = await deps.waitUntil(deadline, task, completed, target); check();
+        if (waited?.early === true) {
+          const saved = Math.max(0, deadline - deps.now());
+          budgetMs -= Math.max(0, slot - saved);
+          shortened += saved;
+          charged = true;
+          deps.onScheduleShift?.(shortened, saved);
+        } else {
+          budgetMs -= slot;
+          charged = true;
+          if (perturbMs > 0) {
+            const perturbDeadline = deps.now() + perturbMs;
+            deps.onPhase?.('perturbing');
+            deps.onTask?.(task, completed, target, perturbDeadline);
+            const perturb = await deps.waitUntil(perturbDeadline, task, completed, target); check();
+            if (perturb?.early === true) deps.report?.('长时间未操作，已结束这一题的随机扰动。');
+          }
+        }
+        deps.onPhase?.('checking');
+        await deps.verify(task); check();
+        deps.onPhase?.('submitting');
+        await deps.submit(task);
+        deps.remember(task); completed++;
+        deps.onProgress?.(completed);
+        deps.report?.('已提交 ' + completed + '/' + target + ' 道，已跳过 ' + skipped + ' 道。');
+      } catch (error) {
+        if (deps.stopped()) throw new Error('定时任务已停止。');
+        if (isTimedSessionAbort(error)) throw error;
+        skipped++;
+        if (!charged) budgetMs -= Math.min(slot, Math.max(0, deps.now() - started));
+        deps.onSkip?.(task, skipTimedQuestion(error), skipped);
+        deps.report?.('已跳过未能填写或提交的练习：' + task.path.join(' / ') + '；定时继续。');
+        continue;
+      }
     }
     check();
     return completed;
@@ -1735,7 +1794,7 @@
   }
   // 允许离线验证答案格式，不在 Node 环境启动页面界面。
   if (typeof document === 'undefined') {
-    if (typeof module !== 'undefined') module.exports = { normalize, fingerprint, validateAnswers, compactLabel, suggestTasks, alignedMenuPath, answeredMenuFlags, menuAlignment, nextMenuJump, navigationPath, taskKey, unitCompatible, validateCourseImport, planSequenceMoves, groupCourseTasks, formatTaskAnswers, correctionDetails, accountRecord, accountFromHomeFields, accountFromHomeState, accountFromPlayer, compareVersions, installationDownloadUrl, parseReleaseMetadata, isRateLimitNotice, createSubmitProtection, buildAutoPlan, executeTimedPlan, buildRepeatPlan, executeRepeatPlan, bookName, taskBook, CONFIRMED_BOOKS, COURSE_TASKS };
+    if (typeof module !== 'undefined') module.exports = { normalize, fingerprint, validateAnswers, compactLabel, suggestTasks, alignedMenuPath, answeredMenuFlags, menuAlignment, nextMenuJump, navigationPath, taskKey, unitCompatible, validateCourseImport, planSequenceMoves, groupCourseTasks, formatTaskAnswers, correctionDetails, accountRecord, accountFromHomeFields, accountFromHomeState, accountFromPlayer, compareVersions, installationDownloadUrl, parseReleaseMetadata, isRateLimitNotice, createSubmitProtection, buildAutoPlan, executeTimedPlan, buildRepeatPlan, executeRepeatPlan, fillWhenPageReady, isUnreadPage, bookName, taskBook, CONFIRMED_BOOKS, COURSE_TASKS };
     return;
   }
   if (document.getElementById('ucampus-transfer-host')) return;
@@ -1758,7 +1817,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 @media(max-width:480px){:host{right:12px;top:16px}section{max-height:calc(100vh - 32px)}header{padding:13px 14px}#body{padding:10px}}
 
 .timer-window{position:fixed;right:520px;top:32px;width:320px;z-index:2147483646}.timer-window header{padding:14px;gap:9px}.timer-window .brand-copy strong{font-size:15px}.timer-mark{width:34px;height:34px;display:grid;place-items:center;border-radius:11px;background:#eaf0ff;color:#4167dc;font-size:25px;font-weight:650}.timer-window .current-banner{padding:0 14px 12px}#timer-summary{background:#edf2ff;color:#4c68a7;font-size:10px;padding:8px 10px;border-radius:8px;margin:0;max-height:52px;overflow:hidden;overflow-wrap:anywhere}#timer-start-path{margin:0;font-size:10px;overflow-wrap:anywhere;color:#7085a5}#timer-stop-quick{padding:6px 9px;color:#bb5963;background:#fff4f5;border-color:#f1d9dd;font-size:11px}#timer-body{padding:12px}.timer-window #auto-scope{font-size:11px}.timer-window #timer-status[data-state=error]{color:#b15a61}.timer-window #timer-status[data-state=success]{color:#38795c}.timer-link{display:block;width:100%;margin:0 0 11px;padding:10px;background:#edf2ff;border-color:#d9e2fc;color:#4666c7}.update-route{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 8px;font-size:11px;color:#70829b}.update-route select{flex:1;border:1px solid #dce4f0;border-radius:8px;background:#fff;padding:7px 8px;font:inherit;color:#31435f}
-.timer-metrics{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px}.timer-stat{border:1px solid #dfe7f7;background:#fff;border-radius:12px;padding:10px 12px}.timer-stat small{margin:0;font-size:10px;color:#8594aa}.timer-stat strong{display:block;margin-top:4px;font-size:23px;font-weight:650;line-height:1.3;color:#3b60c7;font-variant-numeric:tabular-nums}#timer-remaining{font-size:21px}.timer-progress-line{display:flex;justify-content:space-between;gap:8px;font-size:10px;margin:0 2px 12px;color:#7a8fac}#timer-phase{color:#4869c1}#timer-task{margin:0;color:#5b7298;font-size:11px;line-height:1.8;overflow-wrap:anywhere}
+.timer-metrics{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px}.timer-stat{border:1px solid #dfe7f7;background:#fff;border-radius:12px;padding:10px 12px}.timer-stat small{margin:0;font-size:10px;color:#8594aa}.timer-stat strong{display:block;margin-top:4px;font-size:23px;font-weight:650;line-height:1.3;color:#3b60c7;font-variant-numeric:tabular-nums}#timer-remaining{font-size:21px}#timer-perturb{display:block;margin-top:6px;color:#4869c1;font-size:12px;font-weight:650;line-height:1.35}.timer-progress-line{display:flex;justify-content:space-between;gap:8px;font-size:10px;margin:0 2px 12px;color:#7a8fac}#timer-phase{color:#4869c1}#timer-task{margin:0;color:#5b7298;font-size:11px;line-height:1.8;overflow-wrap:anywhere}
 .window-links{display:grid;grid-template-columns:1fr 1fr;gap:8px}.log-window{position:fixed;right:856px;top:32px;width:340px;max-height:360px;z-index:2147483646}.log-window header{padding:13px;gap:8px}.log-window .brand-copy strong{font-size:15px}#log-export,#log-clear,#log-close{padding:6px 8px;font-size:10px;color:#71839e;border-color:#e0e7f2}#log-body{padding:0 12px 12px;min-height:0;overflow:hidden}#log-list{height:235px;max-height:calc(100vh - 190px);overflow:auto;border:1px solid #e0e8f5;border-radius:10px;background:#fff;padding:9px 10px;color:#5b7195;font-size:11px;line-height:1.9;scrollbar-width:thin;margin:0}#log-body small{font-size:9px;margin-top:7px}
 /* 胡桃主题：梅花、蝶影与暖金描边，保持正文易读。 */
 :host{--accent:#8d3048;--line:#eadce0;--muted:#917982;color:#473640}section{background:#fcf6f4;border-color:#e7cbd0;box-shadow:0 20px 65px #49202d28,0 3px 12px #49202d12}header{background:linear-gradient(105deg,#fff9f6 0%,#f8e8e9 72%,#efd5d6 100%);border-bottom:1px solid #e7cbd0}.brand-mark{position:relative;background:linear-gradient(140deg,#7d253d,#aa4351);box-shadow:0 5px 12px #70243d40;color:#ffe9bd}.brand-mark::after{content:'✿';position:absolute;right:-6px;top:-8px;color:#d9a160;font-size:16px;text-shadow:0 1px 2px #fff}.brand-copy strong{color:#643044}.brand-copy span,.caption{color:#9b6975}.current-banner{background:#fff9f6;border-color:#ead6d7}#current-task,#timer-summary{background:#faeceb;color:#79384d}.card{border-color:#eedfe0;background:#fffcfa}.card-heading strong{color:#76394d}.task-row.current{border-color:#af6875;background:#faeeed;color:#7c3448;box-shadow:inset 3px 0 #9a4257}.dot.current{background:#9a4257}.timer-link{background:#faedec;color:#833d50;border-color:#e9cbcf}.timer-mark{background:#f7e6e4;color:#92445b}#submit-course,#auto-start{background:#8d3048;border-color:#8d3048;box-shadow:0 4px 10px #8d304830}#submit-course:hover:not(:disabled),#auto-start:hover:not(:disabled){background:#75253d;border-color:#75253d}#fill-course{color:#833e52;background:#fff5f3;border-color:#efd6da}.timer-stat strong,#timer-phase{color:#8d3048}#log-list{background:#fffaf8;color:#674e58;border-color:#eddce0}#log-export{color:#81394c;background:#fff5ee;border-color:#e8d1c7}button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline-color:#a0486266}.panel-foot::before{content:'✿  ';color:#b96b79}
@@ -1798,14 +1857,14 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 <section id="timer-window" class="timer-window" aria-label="独立定时答题窗口">
 <header id="timer-header"><div class="timer-mark">✦</div><div class="brand-copy"><span>独立任务窗口</span><strong>定时答题</strong></div><button id="timer-stop-quick" disabled title="停止正在运行的定时任务">停止</button><button id="timer-toggle">收起</button></header>
 <div class="current-banner"><small id="timer-summary">未启动 · 先在主窗口选择起始练习</small></div>
-<div id="timer-body"><div class="timer-metrics"><div class="timer-stat"><small>已用时</small><strong id="timer-elapsed">00:00</strong></div><div class="timer-stat"><small>距本题计划提交</small><strong id="timer-remaining">—</strong></div></div><small id="timer-total" hidden>总倒计时：—</small><div class="timer-progress-line"><span id="timer-progress">已完成 0 / 0 道</span><span id="timer-phase">未启动</span></div><div class="card"><div class="card-heading"><strong>当前练习</strong><span class="caption">实际任务位置</span></div><small id="timer-task">尚未开始</small></div><div class="card"><div class="card-heading"><strong>所选练习</strong><span class="caption">与主窗口同步</span></div><small id="timer-start-path"></small></div>
+<div id="timer-body"><div class="timer-metrics"><div class="timer-stat"><small>已用时</small><strong id="timer-elapsed">00:00</strong></div><div class="timer-stat"><small>距本题计划提交</small><strong id="timer-remaining">—</strong><small id="timer-perturb">扰动未开启</small></div></div><small id="timer-total" hidden>总倒计时：—</small><div class="timer-progress-line"><span id="timer-progress">已完成 0 / 0 道</span><span id="timer-phase">未启动</span></div><div class="card"><div class="card-heading"><strong>当前练习</strong><span class="caption">实际任务位置</span></div><small id="timer-task">尚未开始</small></div><div class="card"><div class="card-heading"><strong>所选练习</strong><span class="caption">与主窗口同步</span></div><small id="timer-start-path"></small></div>
 <div class="card"><div id="auto-panel">
 <div class="number-grid"><label>总分钟数<input id="auto-minutes" type="number" min="0.1" max="1440" step="0.1" value="5"></label><label><span id="auto-count-label">练习数</span><input id="auto-count" type="number" min="1" max="500" step="1" value="5"></label></div>
-<label class="idle-confirm-option"><input id="auto-repeat" type="checkbox">重复答题（包含已做题，整本循环至倒计时结束）</label><small id="auto-repeat-note" hidden>从所选题开始，走到书末后从本书第一题继续。练习数只用于计算间隔；跳转失败跳过，填写或提交失败停止。闲置提示可提前提交，但重复模式的总时间不缩短。</small>
+<label class="idle-confirm-option"><input id="auto-repeat" type="checkbox">重复答题（包含已做题，整本循环至倒计时结束）</label><small id="auto-repeat-note" hidden>从所选题开始，走到书末后从本书第一题继续。练习数只用于计算间隔；跳转失败或三次都读不到就跳过。闲置提示可提前提交，但重复模式的总时间不缩短。</small>
 <label class="idle-confirm-option"><input id="auto-perturb" type="checkbox">随机扰动（每题单独加一段等待）</label><div class="number-grid"><label>扰动上限（秒）<input id="auto-perturb-seconds" type="number" min="1" max="500" step="1" value="100"></label></div><small id="auto-perturb-note">每题在自己的分配时间后，再等 0 到所填秒数。不计入总时间，也不平分。长时间未操作会结束这一题的扰动并提交，下一题重新抽。重复答题不加扰动。</small>
 <select id="auto-scope"><option value="unit">从所选题往后 · 当前单元</option><option value="book">从所选题往后 · 当前教材</option></select>
 <small id="auto-preview">5分钟做5道练习，平均1分钟一道。先填，到时间再提交。</small><div class="auto-actions"><button id="auto-start">开始定时任务</button><button id="auto-stop" disabled>停止</button></div>
-<small>每题是一整页练习。跳转最多等10秒，失败只扣实际等待，剩余时间平分给后面的题；填写或提交失败则停止。请保持页面打开，电脑不要休眠。</small><pre id="auto-skipped" aria-label="跳转失败记录"></pre></div></div>
+<small>每题是一整页练习。跳转成功后第1、2、3秒各读一次，读到就填；三次都读不到就下一题。请保持页面打开，电脑不要休眠。</small><pre id="auto-skipped" aria-label="跳转失败记录"></pre></div></div>
 <div class="status-card"><div class="status-label">定时任务状态</div><pre id="timer-status" role="status" aria-live="polite">设置分钟数和题数后，点击开始。</pre></div><div class="panel-foot">独立拖动、收起 · 收起不会停止任务</div></div></section>
 <section id="log-window" class="log-window" aria-label="实时操作日志窗口"><header id="log-header"><div class="timer-mark">✿</div><div class="brand-copy"><span>本地留存 · 最近120条</span><strong>操作日志</strong></div><button id="log-export" title="将最近120条日志下载为文本">导出</button><button id="log-clear">清空</button><button id="log-close">关闭</button></header><div id="log-body"><pre id="log-list" role="log" aria-live="polite" aria-label="实时操作记录">还没有操作记录。</pre><small>最近120条保存在本机；导出前可查看并清理个人信息。关闭此窗不会停止任务。</small></div></section>`;
   (document.body || document.documentElement).appendChild(host);
@@ -1863,18 +1922,27 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   function updateTimerMetrics() {
     const state = autoState || {}, now = state.finishedAt ?? Date.now();
     const elapsed = Number.isFinite(state.startedAt) ? (now - state.startedAt) / 1000 : 0;
-    const phaseNames = { jumping: '正在跳转', filling: '正在填写', waiting: '等待提交', perturbing: '随机扰动', checking: '核对页面', submitting: '正在提交', stopping: '正在停止', completed: '已完成', stopped: '已停止', failed: '异常停止' };
+    const phaseNames = { jumping: '正在跳转', settling: '等待页面', filling: '正在填写', waiting: '等待提交', perturbing: '随机扰动', checking: '核对页面', submitting: '正在提交', stopping: '正在停止', completed: '已完成', stopped: '已停止', failed: '异常停止' };
     let remaining = '—';
     if (state.running && Number.isFinite(state.deadline)) remaining = state.phase === 'submitting' ? '提交中' : state.phase === 'checking' ? '核对中' : state.phase === 'stopping' ? '停止中' : Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000)) + ' 秒';
     const fields = {
       'timer-elapsed': formatTimerDuration(elapsed), 'timer-remaining': remaining,
       'timer-progress': state.repeating ? '重复答题 · 已确认提交 ' + (state.completed || 0) + ' 次' : '已完成 ' + (state.completed || 0) + ' / ' + (state.targetCount || 0) + ' 道',
       'timer-phase': phaseNames[state.phase] || '未启动',
-      'timer-task': state.currentTask ? state.currentTask.path.join(' / ') : ui('timer-start-path').textContent || '先在主窗口选择起始练习'
+      'timer-task': state.currentTask ? state.currentTask.path.join(' / ') : ui('timer-start-path').textContent || '先在主窗口选择起始练习',
+      'timer-perturb': perturbCaption(state)
     };
     ui('timer-total').hidden = !state.repeating;
     if (state.repeating) ui('timer-total').textContent = '总倒计时：' + formatTimerDuration(Math.ceil(Math.max(0, state.endsAt - now) / 1000));
     for (const [id, text] of Object.entries(fields)) if (ui(id).textContent !== text) ui(id).textContent = text;
+  }
+  function perturbCaption(state) {
+    const repeating = state.running ? !!state.repeating : !!ui('auto-repeat').checked;
+    if (repeating) return '重复答题不加扰动';
+    if (!ui('auto-perturb').checked) return '扰动未开启';
+    if (Number.isFinite(state.perturbMs)) return '本题扰动 ' + Math.round(state.perturbMs / 1000) + ' 秒';
+    const max = Number(ui('auto-perturb-seconds').value) || 0;
+    return '扰动 0–' + max + ' 秒';
   }
   function timerStatus(text) {
     if (ui('timer-status').textContent !== text) ui('timer-status').textContent = text;
@@ -3490,6 +3558,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     const minutes = Number(ui('auto-minutes').value), count = Number(ui('auto-count').value);
     const perturbText = perturb ? ' 每题另加 0–' + (Number(ui('auto-perturb-seconds').value) || 0) + ' 秒随机扰动。' : '';
     ui('auto-preview').textContent = minutes > 0 && count > 0 ? repeating ? '总时间 ' + minutes + ' 分钟，约每 ' + (minutes * 60 / count).toFixed(1) + ' 秒提交一题；包含已做题，整书循环，时间归零停止。' : minutes + '分钟做' + count + '道练习，平均每道 ' + (minutes * 60 / count).toFixed(1) + ' 秒；先填，到时间再提交。跳转失败最多扣10秒，剩余时间再平分。' + perturbText : '请输入总分钟数和练习数。';
+    updateTimerMetrics();
   }
   function assertAutoContext(task) {
     if (!accountIdentity || accountIdentity.key !== autoState.accountKey) throw new Error('账号身份已变化，定时任务已停止。');
@@ -3525,12 +3594,13 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
       const completed = await execute(plan, minutes, {
         targetCount, endsAt: autoState.endsAt, skipJumpFailures: true,
         onTask: (task, completed, target, deadline) => { autoState.idleSubmitTaskKey = ''; autoState.currentTask = task; autoState.deadline = deadline; autoState.completed = completed; updateTimerMetrics(); },
-        onPhase: phase => { autoState.phase = phase; updateTimerMetrics(); },
+        onPhase: phase => { autoState.phase = phase; if (phase === 'jumping') autoState.perturbMs = null; updateTimerMetrics(); },
         onProgress: completed => { autoState.completed = completed; updateTimerMetrics(); },
         onScheduleShift: (total, saved) => { autoState.shortenedMs = total; autoState.idleSubmitTaskKey = ''; appendActivityLog('闲置提示提前提交，退回分配时间 ' + Math.ceil(saved / 1000) + ' 秒，后续题目重新平分。'); updateTimerMetrics(); },
+        onPerturb: ms => { autoState.perturbMs = ms; updateTimerMetrics(); },
         onSkip: (task, error) => {
           autoState.skipped.push(task.path.join(' / ') + '：' + (error?.message || String(error)));
-          if (error?.code !== 'REPEAT_UNAVAILABLE') saveNavigationResult(task, error);
+          if (error?.code !== 'REPEAT_UNAVAILABLE' && error?.code !== 'QUESTION_SKIP') saveNavigationResult(task, error);
           appendActivityLog('跳过：' + task.path.join(' / ') + '。原因：' + String(error?.message || error).split(/[。\n]/)[0]);
           ui('auto-skipped').textContent = '跳过记录（不计完成）：\n' + autoState.skipped.join('\n');
         },
@@ -3541,7 +3611,13 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
           try { await jumpToTask(task); if (repeating) await reopenRepeatTask(task); }
           finally { autoState.jumpDeadline = 0; }
         },
-        fill: async task => { assertAutoContext(task); await fillCourseTask(task); },
+        fill: task => fillWhenPageReady({
+          now: () => Date.now(),
+          stopped: () => autoState.cancelled || (repeating && Date.now() >= autoState.endsAt),
+          sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
+          onAttempt: attempt => { autoState.phase = 'settling'; updateTimerMetrics(); timerStatus('跳转成功后第 ' + attempt + ' 秒读取页面。'); },
+          fill: async () => { assertAutoContext(task); return fillCourseTask(task); }
+        }),
         waitUntil: async (deadline, task, index, total) => {
           while (Date.now() < deadline) {
             if (autoState.cancelled) throw new Error('定时任务已停止。');
@@ -3677,7 +3753,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   autoProgressPreview();
   ui('auto-start').onclick = run(async () => {
     try { await startTimedTask(); } catch (error) { timerStatus('定时任务未完成：' + (error.message || String(error))); throw error; }
-  }, { alertOnError: true, actionName: '定时填写提交' });
+  });
   const stopTimedTask = () => { if (autoState.running) { autoState.cancelled = true; autoState.phase = 'stopping'; updateTimerMetrics(); status('正在停止任务，不再进入下一题……'); } };
   ui('auto-stop').onclick = stopTimedTask;
   ui('timer-stop-quick').onclick = stopTimedTask;
