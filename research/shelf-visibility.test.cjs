@@ -33,7 +33,10 @@ assert.equal(grouped.length, 1);
 assert.equal(grouped[0].name, book2);
 assert.equal(grouped[0].total, 0, 'no answers may be shown for another book');
 const real = api.groupCourseTasks(api.COURSE_TASKS, new Set(), [book3], true);
-assert.equal(real[0].total, 96);
+assert.equal(real[0].total, 106);
+const groupedChoice = api.validateCourseImport({ schema: 'ucampus-course-answers/v1', tasks: [{ path: ['Unit 3', 'Taking in', 'Watching street interviews', 'Exercise 4'], kind: 'choice', answers: ['AEG', 'D', 'F', 'BH', 'C'] }] });
+assert.deepEqual(groupedChoice[0].answers, ['AEG', 'D', 'F', 'BH', 'C']);
+assert.throws(() => api.validateCourseImport({ schema: 'ucampus-course-answers/v1', tasks: [{ path: ['Unit 3', 'Taking in', 'Watching street interviews', 'Exercise 4'], kind: 'choice', answers: ['AEG/D'] }] }));
 for (const unit of real[0].units) for (const entry of unit.entries) assert.equal(api.COURSE_TASKS[entry.index], entry.task, 'filtering must retain original task indexes');
 // Exercise the real home URL predicate and read/save pipeline, not a mocked home boolean.
 const shelfStart = source.indexOf('  function shelfStorageKey('), shelfEnd = source.indexOf('  function activeBook(', shelfStart);

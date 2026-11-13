@@ -99,8 +99,8 @@ async function main() {
     remember() {}
   };
   assert.equal(await executeTimedPlan(plan, 5, deps), 5);
-  assert.deepEqual(submissions, [60000, 120000, 150000, 210000, 270000]);
-  assert.equal(saved, 30000, '2:30 idle advances effective elapsed to 3:00 and finishes at 4:30');
+  assert.deepEqual(submissions, [60000, 120000, 150000, 225000, 300000]);
+  assert.equal(saved, 30000, '2:30 idle returns 30s to the remaining two questions');
   let submits = 0;
   await assert.rejects(executeTimedPlan(plan, 5, { ...deps, now: () => 0, fill: async () => { throw Error('填写失败'); }, submit: async () => submits++ }), /填写失败/);
   assert.equal(submits, 0);
@@ -125,6 +125,6 @@ async function main() {
     assert.equal(buttonClicks, trigger === 'before-click' ? 0 : 1);
   }
   console.log('PASS protection: exact notice, persisted 8-minute deadline, reset on reappearance, all submit entries blocked, no auto-resume');
-  console.log('PASS idle: exact one-shot confirmation, fill+verify before submission, 2:30→3:00 schedule, no submit on failure/cancel');
+  console.log('PASS idle: exact one-shot confirmation, fill+verify before submission, unused slot returned, no submit on failure/cancel');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

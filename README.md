@@ -2,7 +2,7 @@
 
 油猴脚本。只填写已经整理好的答案，不猜空着的题，也不自动解题。
 
-当前版本 **0.4.5**。本版已内置教程3的 Unit 1–6 中已核对的 96 道练习。Unit 4 / Watching street interviews / Exercise 3 与 Unit 6 / Opening up / Exercise 2 为分组答案，缺真实题面，暂不收录。主窗口可以选择更新线路：
+当前版本 **0.4.14**。本版已内置教程3的 Unit 1–6 中已核对的 106 道练习，包含按斜杠分组的多选题。普通定时一次跳转最多等 10 秒，没打开就跳过并只扣实际耗时，剩余时间再平分；可选单题随机扰动，默认关闭。主窗口可以选择更新线路：
 
 - 阿里云：https://dl.keon5223.xyz/ucampus-answer-transfer.user.js
 - GitHub：https://raw.githubusercontent.com/keonxyz5223-beep/ucampus-answer-transfer/main/ucampus-answer-transfer.user.js

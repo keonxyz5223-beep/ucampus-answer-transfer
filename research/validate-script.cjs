@@ -100,4 +100,20 @@ check('jump ignores a different branch', () => {
   assert.equal(hit.index, 0);
   assert.equal(nextMenuJump(entries, ['Speaking out', 'Exercise 9'], 0), null);
 });
+check('unit 2 answers stay off the unit 1 menu', () => {
+  const unit1 = ['Unit 1 Access to success', 'Taking in', 'Viewing China', 'While you view', 'Exercise 1'];
+  const unit2 = ['Unit 2 Emotions speak louder than words', 'Taking in', 'Viewing China', 'While you view', 'Exercise 1'];
+  const oldTask = ['Taking in', 'Viewing China', 'While you view', 'Exercise 1'];
+  const newTask = ['Unit 2', 'Taking in', 'Viewing China', 'While you view', 'Exercise 1'];
+  assert.ok(alignedMenuPath(unit1, oldTask));
+  assert.equal(alignedMenuPath(unit2, oldTask), null);
+  assert.equal(alignedMenuPath(unit1, newTask), null);
+  assert.ok(alignedMenuPath(unit2, newTask));
+  const hits = suggestTasks([
+    { path: oldTask },
+    { path: newTask },
+  ], ['Unit 2 Emotions speak louder than words', 'Taking in', 'Viewing China', 'While you view', 'Exercise 1']);
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].path[0], 'Unit 2');
+});
 console.log(`${passed} checks passed. Browser and live course validation pending.`);

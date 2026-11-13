@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         U校园 · 我的答案搬运助手
 // @namespace    local.ucampus.answer-transfer
-// @version      0.4.13
+// @version      0.4.14
 // @description  按本人整理的答案填写当前练习，并点击页面上的提交节点。只填已给出的答案。
 // @match        https://uai.unipus.cn/*
 // @match        https://ucontent.unipus.cn/*
@@ -20,7 +20,7 @@
 
 (() => {
   'use strict';
-  const SCRIPT_VERSION = '0.4.13';
+  const SCRIPT_VERSION = '0.4.14';
   const RELEASE_METADATA_URL = 'https://dl.keon5223.xyz/api/version/ucampus';
   const DOWNLOAD_PORTAL_URL = 'https://dl.keon5223.xyz/download?software=ucampus';
   // 由官网下载服务为每次授权安装替换；公开仓库只含占位符，不含真实凭据。
@@ -335,24 +335,32 @@
     if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 1440) throw new Error('总分钟数应大于0且不超过1440。');
     const target = deps.targetCount ?? plan.length;
     if (!Number.isInteger(target) || target < 1 || target > plan.length) throw new Error('可用练习不足计划题数。');
-    const slot = minutes * 60000 / target;
-    if (slot < 1000) throw new Error('平均每道练习至少留1秒。');
-    let start = deps.now(), shortened = 0;
-    let completed = 0, skipped = 0;
+    const totalMs = minutes * 60000;
+    if (totalMs / target < 10000) throw new Error('平均每道至少10秒。');
+    let budgetMs = totalMs, completed = 0, skipped = 0, shortened = 0;
+    const queue = plan.slice(0, target);
     const check = () => { if (deps.stopped()) throw new Error('定时任务已停止。'); };
-    for (let index = 0; index < plan.length && completed < target; index++) {
-      check(); const task = plan[index], deadline = start + slot * (completed + 1);
-      if (deps.now() > deadline) throw new Error('尝试跳转已超过当前练习分配时间，已停止，没有赶时间连交。');
+    while (queue.length && completed < target) {
+      check();
+      let dropped = 0;
+      while (queue.length && budgetMs / queue.length < 10000) { queue.pop(); dropped++; }
+      if (dropped) deps.report?.('剩余时间不足10秒，未开始后面 ' + dropped + ' 道。');
+      if (!queue.length) break;
+      const slot = budgetMs / queue.length;
+      const task = queue.shift();
+      const started = deps.now();
+      const deadline = started + slot;
       deps.onTask?.(task, completed, target, deadline);
       deps.onPhase?.('jumping');
-      deps.report('正在打开第 ' + (completed + 1) + '/' + target + ' 道，已跳过 ' + skipped + ' 道：' + task.path.join(' / '));
+      deps.report?.('正在打开第 ' + (completed + 1) + '/' + target + ' 道，已跳过 ' + skipped + ' 道：' + task.path.join(' / '));
       try { await deps.jump(task); check(); }
       catch (error) {
         check();
         if (!deps.skipJumpFailures) throw error;
         skipped++;
+        budgetMs -= Math.min(10000, Math.max(0, deps.now() - started));
         deps.onSkip?.(task, error, skipped);
-        deps.report('已跳过跳转失败的练习：' + task.path.join(' / ') + '；继续查找下一道。');
+        deps.report?.('已跳过跳转失败的练习：' + task.path.join(' / ') + '；剩余时间重新平分。');
         continue;
       }
       deps.onPhase?.('filling');
@@ -362,8 +370,19 @@
       const waited = await deps.waitUntil(deadline, task, completed, target); check();
       if (waited?.early === true) {
         const saved = Math.max(0, deadline - deps.now());
-        start -= saved; shortened += saved;
+        budgetMs -= Math.max(0, slot - saved);
+        shortened += saved;
         deps.onScheduleShift?.(shortened, saved);
+      } else {
+        budgetMs -= slot;
+        const extra = Number(deps.perturbationMs?.(task));
+        if (Number.isFinite(extra) && extra > 0) {
+          const perturbDeadline = deps.now() + extra;
+          deps.onPhase?.('perturbing');
+          deps.onTask?.(task, completed, target, perturbDeadline);
+          const perturb = await deps.waitUntil(perturbDeadline, task, completed, target); check();
+          if (perturb?.early === true) deps.report?.('长时间未操作，已结束这一题的随机扰动。');
+        }
       }
       deps.onPhase?.('checking');
       await deps.verify(task); check();
@@ -371,10 +390,9 @@
       await deps.submit(task);
       deps.remember(task); completed++;
       deps.onProgress?.(completed);
-      deps.report('已提交 ' + completed + '/' + target + ' 道，已跳过 ' + skipped + ' 道跳转失败的练习。');
+      deps.report?.('已提交 ' + completed + '/' + target + ' 道，已跳过 ' + skipped + ' 道跳转失败的练习。');
     }
     check();
-    if (completed < target) throw new Error('后面已无可尝试的练习：已确认提交 ' + completed + '/' + target + ' 道，跳过 ' + skipped + ' 道跳转失败的练习。没有补标或重复提交。');
     return completed;
   }
   function isUnitToken(value) {
@@ -404,8 +422,15 @@
     { path: ['Taking in', 'Viewing world cultures', 'While you view', 'Exercise 2'], kind: 'fill', answers: ['90 minutes', 'worried', 'on the waves', '10 times', 'dig in', 'focus', 'make this challenge', 'seven miles', 'four months', 'outstanding achievement'] },
     { path: ['Taking in', 'Watching street interviews', 'Exercise 2'], kind: 'fill', answers: ['cup of tea', 'feel good', 'trying new things'] },
     { path: ['Taking in', 'Watching street interviews', 'Exercise 3'], kind: 'choice', answers: ['E', 'D', 'A', 'B', 'C'] },
-    { path: ['Taking in', 'Watching street interviews', 'Exercise 4'], kind: 'choice', answers: ['B', 'A', 'C', 'C', 'O'] },
+    { path: ['Taking in', 'Watching street interviews', 'Exercise 4'], kind: 'choice', answers: ['B', 'A', 'C', 'C', 'C'] },
     { path: ['Speaking out', 'Group discussion', 'Get ideas', 'Exercise 2'], kind: 'choice', answers: ['A', 'B', 'C', 'F', 'G', 'I', 'J', 'K'] },
+    { path: ['Further listening', 'Conversation'], kind: 'choice', answers: ['B', 'C', 'A', 'A'] },
+    { path: ['Further listening', 'Passage'], kind: 'choice', answers: ['A', 'A', 'B'] },
+    { path: ['Further listening', 'Lecture 1'], kind: 'choice', answers: ['D', 'C', 'A'] },
+    { path: ['Further listening', 'Lecture 2'], kind: 'choice', answers: ['B', 'D', 'A', 'A'] },
+    { path: ['Unit test', 'Conversation'], kind: 'choice', answers: ['B', 'C', 'C', 'D'] },
+    { path: ['Unit test', 'Passage'], kind: 'choice', answers: ['D', 'B', 'A'] },
+    { path: ['Unit test', 'Lecture'], kind: 'choice', answers: ['C', 'B', 'A', 'C'] },
     { path: ['Unit 2', 'Taking in', 'Listening to China', 'While you listen', 'Exercise 2'], kind: 'fill', answers: ['fighting a battle', 'misunderstandings', 'my energy', 'Chinese calligraphy', 'incredibly fulfilling', 'build connections'] },
     { path: ['Unit 2', 'Taking in', 'Listening to China', 'While you listen', 'Exercise 3'], kind: 'choice', answers: ['B', 'A', 'A', 'B', 'B'] },
     { path: ['Unit 2', 'Taking in', 'Viewing China', 'While you view', 'Exercise 1'], kind: 'choice', answers: ['D', 'C', 'B'] },
@@ -554,6 +579,22 @@
       "B",
       "D",
       "A",
+      "C"
+    ]
+  },
+  {
+    "path": [
+      "Unit 3",
+      "Taking in",
+      "Watching street interviews",
+      "Exercise 4"
+    ],
+    "kind": "choice",
+    "answers": [
+      "AEG",
+      "D",
+      "F",
+      "BH",
       "C"
     ]
   },
@@ -812,6 +853,20 @@
       "happening",
       "concern",
       "challenges"
+    ]
+  },
+  {
+    "path": [
+      "Unit 4",
+      "Taking in",
+      "Watching street interviews",
+      "Exercise 3"
+    ],
+    "kind": "choice",
+    "answers": [
+      "A",
+      "BD",
+      "FEDEAFBC"
     ]
   },
   {
@@ -1254,6 +1309,19 @@
   {
     "path": [
       "Unit 6",
+      "Opening up",
+      "Exercise 2"
+    ],
+    "kind": "choice",
+    "answers": [
+      "AEG",
+      "CFHK",
+      "BDIJ"
+    ]
+  },
+  {
+    "path": [
+      "Unit 6",
       "Taking in",
       "Listening to China",
       "While you listen",
@@ -1622,7 +1690,7 @@
       if (!Array.isArray(task.path) || task.path.length < 3 || task.path.some(part => typeof part !== 'string' || !part.trim()) || !/^Unit [1-9]\d*$/.test(task.path[0])) throw new Error('每道练习需要完整路径，并以 Unit 1、Unit 2 等开头。');
       if (!['fill', 'choice'].includes(task.kind)) throw new Error('kind 只能是 fill 或 choice。');
       if (!Array.isArray(task.answers) || !task.answers.length || task.answers.some(a => typeof a !== 'string' || !a.trim())) throw new Error('答案必须是非空字符串数组。');
-      if (task.kind === 'choice' && task.answers.some(a => !/^[A-Z]$/.test(a))) throw new Error('选择题每个答案必须是单个大写字母。多选按选项顺序拆成多个字母。');
+      if (task.kind === 'choice' && task.answers.some(a => !/^[A-Z]+$/.test(a))) throw new Error('选择题每一组必须是大写字母。同一题多选写成一组，例如 AEG；斜杠只用来分组，不要写进答案。');
       const path = task.path.map(part => part.trim());
       if (path[0] === 'Unit 1') path.shift();
       const book = bookName(task.book || data.course || DEFAULT_BOOK);
@@ -1734,9 +1802,10 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 <div class="card"><div id="auto-panel">
 <div class="number-grid"><label>总分钟数<input id="auto-minutes" type="number" min="0.1" max="1440" step="0.1" value="5"></label><label><span id="auto-count-label">练习数</span><input id="auto-count" type="number" min="1" max="500" step="1" value="5"></label></div>
 <label class="idle-confirm-option"><input id="auto-repeat" type="checkbox">重复答题（包含已做题，整本循环至倒计时结束）</label><small id="auto-repeat-note" hidden>从所选题开始，走到书末后从本书第一题继续。练习数只用于计算间隔；跳转失败跳过，填写或提交失败停止。闲置提示可提前提交，但重复模式的总时间不缩短。</small>
+<label class="idle-confirm-option"><input id="auto-perturb" type="checkbox">随机扰动（每题单独加一段等待）</label><div class="number-grid"><label>扰动上限（秒）<input id="auto-perturb-seconds" type="number" min="1" max="500" step="1" value="100"></label></div><small id="auto-perturb-note">每题在自己的分配时间后，再等 0 到所填秒数。不计入总时间，也不平分。长时间未操作会结束这一题的扰动并提交，下一题重新抽。重复答题不加扰动。</small>
 <select id="auto-scope"><option value="unit">从所选题往后 · 当前单元</option><option value="book">从所选题往后 · 当前教材</option></select>
 <small id="auto-preview">5分钟做5道练习，平均1分钟一道。先填，到时间再提交。</small><div class="auto-actions"><button id="auto-start">开始定时任务</button><button id="auto-stop" disabled>停止</button></div>
-<small>每题是一整页练习。跳转失败继续往后找；填写或提交失败则停止。请保持页面打开，电脑不要休眠。</small><pre id="auto-skipped" aria-label="跳转失败记录"></pre></div></div>
+<small>每题是一整页练习。跳转最多等10秒，失败只扣实际等待，剩余时间平分给后面的题；填写或提交失败则停止。请保持页面打开，电脑不要休眠。</small><pre id="auto-skipped" aria-label="跳转失败记录"></pre></div></div>
 <div class="status-card"><div class="status-label">定时任务状态</div><pre id="timer-status" role="status" aria-live="polite">设置分钟数和题数后，点击开始。</pre></div><div class="panel-foot">独立拖动、收起 · 收起不会停止任务</div></div></section>
 <section id="log-window" class="log-window" aria-label="实时操作日志窗口"><header id="log-header"><div class="timer-mark">✿</div><div class="brand-copy"><span>本地留存 · 最近120条</span><strong>操作日志</strong></div><button id="log-export" title="将最近120条日志下载为文本">导出</button><button id="log-clear">清空</button><button id="log-close">关闭</button></header><div id="log-body"><pre id="log-list" role="log" aria-live="polite" aria-label="实时操作记录">还没有操作记录。</pre><small>最近120条保存在本机；导出前可查看并清理个人信息。关闭此窗不会停止任务。</small></div></section>`;
   (document.body || document.documentElement).appendChild(host);
@@ -1793,8 +1862,8 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   }
   function updateTimerMetrics() {
     const state = autoState || {}, now = state.finishedAt ?? Date.now();
-    const elapsed = Number.isFinite(state.startedAt) ? (now - state.startedAt + (state.shortenedMs || 0)) / 1000 : 0;
-    const phaseNames = { jumping: '正在跳转', filling: '正在填写', waiting: '等待提交', checking: '核对页面', submitting: '正在提交', stopping: '正在停止', completed: '已完成', stopped: '已停止', failed: '异常停止' };
+    const elapsed = Number.isFinite(state.startedAt) ? (now - state.startedAt) / 1000 : 0;
+    const phaseNames = { jumping: '正在跳转', filling: '正在填写', waiting: '等待提交', perturbing: '随机扰动', checking: '核对页面', submitting: '正在提交', stopping: '正在停止', completed: '已完成', stopped: '已停止', failed: '异常停止' };
     let remaining = '—';
     if (state.running && Number.isFinite(state.deadline)) remaining = state.phase === 'submitting' ? '提交中' : state.phase === 'checking' ? '核对中' : state.phase === 'stopping' ? '停止中' : Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000)) + ' 秒';
     const fields = {
@@ -1932,9 +2001,9 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
       confirmedIdleButtons.add(button);
       button.click();
       appendActivityLog('已自动确认网页的长时间未操作提示。');
-      if (autoState?.running && !autoState.cancelled && autoState.currentTask && ['jumping', 'filling', 'waiting'].includes(autoState.phase)) {
+      if (autoState?.running && !autoState.cancelled && autoState.currentTask && ['jumping', 'filling', 'waiting', 'perturbing'].includes(autoState.phase)) {
         autoState.idleSubmitTaskKey = taskKey(autoState.currentTask.path, autoState.currentTask.book);
-        appendActivityLog('定时任务收到闲置提示，当前题填写并核对后提前提交；未等待时间不补回。');
+        appendActivityLog(autoState.phase === 'perturbing' ? '定时任务在随机扰动期间收到闲置提示，结束这一题的扰动并提交；下一题重新抽。' : '定时任务收到闲置提示，当前题填写并核对后提前提交；没用完的分配时间退回后续题目。');
       }
     }
   }
@@ -2378,8 +2447,8 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     const groups = choiceGroups();
     if (!groups.length) throw new Error('当前页没有找到选项。');
     let plan;
-    if (groups.length === task.answers.length) plan = groups.map((group, index) => ({ group, letters: [task.answers[index]] }));
-    else if (groups.length === 1) plan = [{ group: groups[0], letters: task.answers }];
+    if (groups.length === task.answers.length) plan = groups.map((group, index) => ({ group, letters: [...task.answers[index]] }));
+    else if (groups.length === 1) plan = [{ group: groups[0], letters: task.answers.flatMap(answer => [...answer]) }];
     else throw new Error(`页面有 ${groups.length} 组选项，答案有 ${task.answers.length} 个，对不上，已停止。`);
     for (const item of plan) {
       for (const letter of item.letters) {
@@ -3208,12 +3277,14 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
       if (typeof autoState !== 'undefined' && autoState?.running) {
         if (autoState.cancelled) throw new Error('定时任务已停止。');
         if (autoState.repeating && Date.now() >= autoState.endsAt) throw new Error('重复答题总倒计时已结束。');
+        if (autoState.jumpDeadline && Date.now() >= autoState.jumpDeadline) throw new Error('跳转超过10秒，没有打开。');
       }
       if (jumpCheckState.running && jumpCheckState.cancelled) throw new Error('跳转检查已停止。');
       const value = read();
       if (value) return value;
       await new Promise(resolve => setTimeout(resolve, 150));
     }
+    if (typeof autoState !== 'undefined' && autoState?.jumpDeadline && Date.now() >= autoState.jumpDeadline) throw new Error('跳转超过10秒，没有打开。');
     return null;
   }
   async function jumpToTask(task) {
@@ -3409,11 +3480,16 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   document.addEventListener?.('visibilitychange', () => { if (!document.hidden) scheduleCatalogRefresh(); });
   function autoProgressPreview() {
     const repeating = ui('auto-repeat').checked;
+    const perturb = ui('auto-perturb').checked && !repeating;
     ui('auto-repeat-note').hidden = !repeating;
+    ui('auto-perturb').disabled = repeating || autoState.running;
+    ui('auto-perturb-seconds').disabled = !perturb || autoState.running;
+    ui('auto-perturb-note').hidden = repeating;
     ui('auto-count-label').textContent = repeating ? '节奏题数' : '练习数';
     ui('auto-scope').disabled = repeating || autoState.running;
     const minutes = Number(ui('auto-minutes').value), count = Number(ui('auto-count').value);
-    ui('auto-preview').textContent = minutes > 0 && count > 0 ? repeating ? '总时间 ' + minutes + ' 分钟，约每 ' + (minutes * 60 / count).toFixed(1) + ' 秒提交一题；包含已做题，整书循环，时间归零停止。' : minutes + '分钟做' + count + '道练习，平均每道 ' + (minutes * 60 / count).toFixed(1) + ' 秒；先填，到时间再提交。' : '请输入总分钟数和练习数。';
+    const perturbText = perturb ? ' 每题另加 0–' + (Number(ui('auto-perturb-seconds').value) || 0) + ' 秒随机扰动。' : '';
+    ui('auto-preview').textContent = minutes > 0 && count > 0 ? repeating ? '总时间 ' + minutes + ' 分钟，约每 ' + (minutes * 60 / count).toFixed(1) + ' 秒提交一题；包含已做题，整书循环，时间归零停止。' : minutes + '分钟做' + count + '道练习，平均每道 ' + (minutes * 60 / count).toFixed(1) + ' 秒；先填，到时间再提交。跳转失败最多扣10秒，剩余时间再平分。' + perturbText : '请输入总分钟数和练习数。';
   }
   function assertAutoContext(task) {
     if (!accountIdentity || accountIdentity.key !== autoState.accountKey) throw new Error('账号身份已变化，定时任务已停止。');
@@ -3430,16 +3506,19 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     const failedKeys = Object.keys(navigationFailures(taskBook(selected)));
     const repeating = ui('auto-repeat').checked;
     const excluded = new Set([...(repeating ? [] : readSubmitted()), ...failedKeys]);
-    const plan = repeating ? buildRepeatPlan(COURSE_TASKS, excluded, selected) : buildAutoPlan(COURSE_TASKS, excluded, selected, ui('auto-scope').value || 'unit', Number(ui('auto-count').value), true);
+    const plan = repeating ? buildRepeatPlan(COURSE_TASKS, excluded, selected) : buildAutoPlan(COURSE_TASKS, excluded, selected, ui('auto-scope').value || 'unit', Number(ui('auto-count').value), false);
     const targetCount = Number(ui('auto-count').value);
     const minutes = Number(ui('auto-minutes').value);
-    if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 1440 || minutes * 60000 / targetCount < 1000) throw new Error('分钟数应大于0且不超过1440，平均每道至少1秒。');
+    const perturbOn = !repeating && ui('auto-perturb').checked;
+    const perturbMax = Number(ui('auto-perturb-seconds').value);
+    if (perturbOn && (!Number.isInteger(perturbMax) || perturbMax < 1 || perturbMax > 500)) throw new Error('随机扰动请填写1至500的整数秒。');
+    if (!Number.isFinite(minutes) || minutes <= 0 || minutes > 1440 || minutes * 60000 / targetCount < (repeating ? 1000 : 10000)) throw new Error(repeating ? '分钟数应大于0且不超过1440，平均每道至少1秒。' : '分钟数应大于0且不超过1440，平均每道至少10秒。');
     autoState = { running: true, cancelled: false, accountKey: expectedAccountKey, skipped: [], startedAt: Date.now(), repeating, endsAt: Date.now() + minutes * 60000, completed: 0, targetCount, phase: 'jumping', shortenedMs: 0, idleSubmitTaskKey: '' };
     autoState.clockTimer = setInterval(updateTimerMetrics, 1000);
     updateTimerMetrics();
     ui('auto-skipped').textContent = failedKeys.length ? '已按整本教材共享检查结果预先跳过 ' + failedKeys.length + ' 道跳转未找到的练习（不计完成）。' : '';
     ui('auto-start').disabled = true; ui('auto-stop').disabled = false; ui('timer-stop-quick').disabled = false;
-    for (const id of ['auto-minutes', 'auto-count', 'auto-scope', 'auto-repeat']) ui(id).disabled = true;
+    for (const id of ['auto-minutes', 'auto-count', 'auto-scope', 'auto-repeat', 'auto-perturb', 'auto-perturb-seconds']) ui(id).disabled = true;
     timerStatus('正在准备定时任务……');
     try {
       const execute = repeating ? executeRepeatPlan : executeTimedPlan;
@@ -3448,7 +3527,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
         onTask: (task, completed, target, deadline) => { autoState.idleSubmitTaskKey = ''; autoState.currentTask = task; autoState.deadline = deadline; autoState.completed = completed; updateTimerMetrics(); },
         onPhase: phase => { autoState.phase = phase; updateTimerMetrics(); },
         onProgress: completed => { autoState.completed = completed; updateTimerMetrics(); },
-        onScheduleShift: (total, saved) => { autoState.shortenedMs = total; autoState.idleSubmitTaskKey = ''; appendActivityLog('闲置提示提前提交，计划跳过等待 ' + Math.ceil(saved / 1000) + ' 秒。'); updateTimerMetrics(); },
+        onScheduleShift: (total, saved) => { autoState.shortenedMs = total; autoState.idleSubmitTaskKey = ''; appendActivityLog('闲置提示提前提交，退回分配时间 ' + Math.ceil(saved / 1000) + ' 秒，后续题目重新平分。'); updateTimerMetrics(); },
         onSkip: (task, error) => {
           autoState.skipped.push(task.path.join(' / ') + '：' + (error?.message || String(error)));
           if (error?.code !== 'REPEAT_UNAVAILABLE') saveNavigationResult(task, error);
@@ -3456,7 +3535,12 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
           ui('auto-skipped').textContent = '跳过记录（不计完成）：\n' + autoState.skipped.join('\n');
         },
         now: () => Date.now(), stopped: () => autoState.cancelled, report: status,
-        jump: async task => { await jumpToTask(task); if (repeating) await reopenRepeatTask(task); },
+        perturbationMs: perturbOn ? () => Math.floor(Math.random() * (perturbMax + 1)) * 1000 : null,
+        jump: async task => {
+          if (!repeating) autoState.jumpDeadline = Date.now() + 10000;
+          try { await jumpToTask(task); if (repeating) await reopenRepeatTask(task); }
+          finally { autoState.jumpDeadline = 0; }
+        },
         fill: async task => { assertAutoContext(task); await fillCourseTask(task); },
         waitUntil: async (deadline, task, index, total) => {
           while (Date.now() < deadline) {
@@ -3484,7 +3568,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
       if (typeof clearInterval === 'function' && autoState.clockTimer !== undefined) clearInterval(autoState.clockTimer);
       autoState.finishedAt = Date.now(); autoState.running = false; updateTimerMetrics();
       ui('auto-start').disabled = false; ui('auto-stop').disabled = true; ui('timer-stop-quick').disabled = true;
-      for (const id of ['auto-minutes', 'auto-count', 'auto-scope', 'auto-repeat']) ui(id).disabled = false;
+      for (const id of ['auto-minutes', 'auto-count', 'auto-scope', 'auto-repeat', 'auto-perturb', 'auto-perturb-seconds']) ui(id).disabled = false;
       autoProgressPreview();
     }
   }
@@ -3589,7 +3673,8 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   }, { alertOnError: true, actionName: '绑定课本账号' });
   ui('read-books').onclick = run(async () => readShelf());
   ui('auto-minutes').oninput = autoProgressPreview; ui('auto-count').oninput = autoProgressPreview;
-  ui('auto-repeat').onchange = autoProgressPreview;
+  ui('auto-repeat').onchange = autoProgressPreview; ui('auto-perturb').onchange = autoProgressPreview; ui('auto-perturb-seconds').oninput = autoProgressPreview;
+  autoProgressPreview();
   ui('auto-start').onclick = run(async () => {
     try { await startTimedTask(); } catch (error) { timerStatus('定时任务未完成：' + (error.message || String(error))); throw error; }
   }, { alertOnError: true, actionName: '定时填写提交' });
