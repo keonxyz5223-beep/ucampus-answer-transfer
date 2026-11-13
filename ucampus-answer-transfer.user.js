@@ -1,17 +1,16 @@
 // ==UserScript==
 // @name         U校园 · 我的答案搬运助手
 // @namespace    local.ucampus.answer-transfer
-// @version      0.4.12
+// @version      0.4.13
 // @description  按本人整理的答案填写当前练习，并点击页面上的提交节点。只填已给出的答案。
 // @match        https://uai.unipus.cn/*
 // @match        https://ucontent.unipus.cn/*
 // @match        https://ucloud.unipus.cn/*
-// @updateURL    https://dl.keon5223.xyz/ucampus-answer-transfer.user.js
-// @downloadURL  https://dl.keon5223.xyz/ucampus-answer-transfer.user.js
+// @updateURL    https://dl.keon5223.xyz/api/install/__UCAMPUS_INSTALL_TOKEN__/update.meta.js
+// @downloadURL  https://dl.keon5223.xyz/api/install/__UCAMPUS_INSTALL_TOKEN__/script.user.js
 // @run-at       document-idle
 // @sandbox      raw
 // @connect      dl.keon5223.xyz
-// @connect      raw.githubusercontent.com
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_addValueChangeListener
@@ -21,12 +20,23 @@
 
 (() => {
   'use strict';
-  const SCRIPT_VERSION = '0.4.12';
-  const UPDATE_ROUTES = {
-    server: 'https://dl.keon5223.xyz/ucampus-answer-transfer.user.js',
-    github: 'https://raw.githubusercontent.com/keonxyz5223-beep/ucampus-answer-transfer/main/ucampus-answer-transfer.user.js'
-  };
-  const UPDATE_ROUTE_KEY = 'ucampus-update-route/v1';
+  const SCRIPT_VERSION = '0.4.13';
+  const RELEASE_METADATA_URL = 'https://dl.keon5223.xyz/api/version/ucampus';
+  const DOWNLOAD_PORTAL_URL = 'https://dl.keon5223.xyz/download?software=ucampus';
+  // 由官网下载服务为每次授权安装替换；公开仓库只含占位符，不含真实凭据。
+  const INSTALLATION_TOKEN = '__UCAMPUS_INSTALL_TOKEN__';
+  function installationDownloadUrl(token = INSTALLATION_TOKEN) {
+    return typeof token === 'string' && /^[A-Za-z0-9_-]{32,128}$/.test(token) && !token.startsWith('__')
+      ? 'https://dl.keon5223.xyz/api/install/' + encodeURIComponent(token) + '/script.user.js' : DOWNLOAD_PORTAL_URL;
+  }
+  function parseReleaseMetadata(text) {
+    let data;
+    try { data = JSON.parse(String(text)); } catch { throw new Error('版本接口未返回有效JSON，请检查下载站状态。'); }
+    if (data?.schema !== 'ucampus-release/v1' || typeof data.version !== 'string' || !/^\d+(?:\.\d+){1,3}$/.test(data.version)) {
+      throw new Error('版本资料格式不正确，不能据此判断是否需要更新。');
+    }
+    return data;
+  }
   const normalize = value => String(value ?? '').normalize('NFKC').replace(/\s+/g, ' ').trim();
   function fingerprint(value) {
     let hash = 2166136261;
@@ -1657,7 +1667,7 @@
   }
   // 允许离线验证答案格式，不在 Node 环境启动页面界面。
   if (typeof document === 'undefined') {
-    if (typeof module !== 'undefined') module.exports = { normalize, fingerprint, validateAnswers, compactLabel, suggestTasks, alignedMenuPath, answeredMenuFlags, menuAlignment, nextMenuJump, navigationPath, taskKey, unitCompatible, validateCourseImport, planSequenceMoves, groupCourseTasks, formatTaskAnswers, correctionDetails, accountRecord, accountFromHomeFields, accountFromHomeState, accountFromPlayer, compareVersions, isRateLimitNotice, createSubmitProtection, buildAutoPlan, executeTimedPlan, buildRepeatPlan, executeRepeatPlan, bookName, taskBook, CONFIRMED_BOOKS, COURSE_TASKS };
+    if (typeof module !== 'undefined') module.exports = { normalize, fingerprint, validateAnswers, compactLabel, suggestTasks, alignedMenuPath, answeredMenuFlags, menuAlignment, nextMenuJump, navigationPath, taskKey, unitCompatible, validateCourseImport, planSequenceMoves, groupCourseTasks, formatTaskAnswers, correctionDetails, accountRecord, accountFromHomeFields, accountFromHomeState, accountFromPlayer, compareVersions, installationDownloadUrl, parseReleaseMetadata, isRateLimitNotice, createSubmitProtection, buildAutoPlan, executeTimedPlan, buildRepeatPlan, executeRepeatPlan, bookName, taskBook, CONFIRMED_BOOKS, COURSE_TASKS };
     return;
   }
   if (document.getElementById('ucampus-transfer-host')) return;
@@ -1692,7 +1702,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 <aside id="submit-protection" hidden role="status" aria-label="提交保护倒计时"><strong>提交过快 · 休息一会</strong><b id="submit-protection-clock">08:00</b><p>提交过于快了，休息会再提交。</p><p>再次出现网页频繁操作提示时，重新计时8分钟。定时任务已停止，不会自动续跑。</p></aside>
 <section aria-label="U校园答案搬运助手">
 <header><div class="brand-mark">U</div><div class="brand-copy"><span>✿ 胡桃的学习手记 · U校园</span><strong>答案搬运助手 <b class="version">v${SCRIPT_VERSION}</b></strong></div><button id="submit-top" title="填写并提交所选练习">填写并提交</button><button id="toggle" title="收起或展开助手">收起</button></header>
-<div id="update-banner" role="status" hidden><strong id="update-title">发现新版本</strong><p>阿里云已发布新版脚本。更新由 Tampermonkey 确认安装。</p><div><button id="update-now">前往更新</button><button id="update-later">稍后</button></div></div>
+<div id="update-banner" role="status" hidden><strong id="update-title">发现新版本</strong><p>官网已发布新版。已授权安装可更新；首次官网下载需向作者获取验证码。GitHub源码继续公开。</p><div><button id="update-now">前往更新</button><button id="update-later">稍后</button></div></div>
 <div class="current-banner"><div id="account-banner" role="status">当前登录账号：正在识别学校和学号…</div><small id="current-task">当前题：识别中</small></div>
 <div id="body">
 <div class="card">
@@ -1711,8 +1721,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 <div class="utility-actions"><button id="jump">跳到这道题</button><button id="detect">识别当前练习</button><button id="bind-route">记住当前页位置</button></div>
 <div class="main-actions"><button id="submit-course">填写并提交</button><button id="fill-course">仅填写答案</button><button id="submit-only" title="提交网页现有答案，不重新填写">仅提交</button></div><small class="hint">手动改好答案后用「仅提交」，保留网页现有内容。</small></div>
 <div class="window-links"><button id="show-timer" class="timer-link">定时答题窗口 ↗</button><button id="toggle-log" class="timer-link">关闭日志窗口</button></div>
-<label class="update-route">更新线路<select id="update-route"><option value="server">阿里云 dl.keon5223.xyz</option><option value="github">GitHub</option></select></label>
-<button id="check-update" class="timer-link">检查所选线路</button>
+<button id="check-update" class="timer-link">检查新版</button><small>仅读取公开版本号；官网下载及后续更新使用可撤销的安装授权。GitHub源码仍公开。</small>
 <label class="idle-confirm-option"><input id="auto-idle-confirm" type="checkbox">手动答题时，长时间未操作自动点「确定」</label><small>定时答题会自动确认指定的闲置提示，填完并核对当前题后提前提交，跳过的等待时间不补回。</small>
 <details class="card" id="import-panel"><summary>导入答案与页面工具</summary><small>选择答案 JSON 自动导入，或粘贴后点导入。</small><input id="file" type="file" accept="application/json,.json"><textarea id="answers" placeholder="在此粘贴完整答案 JSON"></textarea><div class="import-actions"><button id="import-course">导入整单元答案</button><button id="preview">核对答案</button><button id="fill" disabled>填写本页答案</button></div><small>导入只保存；同一本书、同一道题的答案会更新。</small>
 <details class="advanced-tools"><summary>页面资料与模板</summary><div class="import-actions"><button id="scan">采集当前练习</button><button id="export">导出页面资料</button><button id="template">导出答案模板</button></div></details></details>
@@ -2991,54 +3000,36 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     if (a.suffix && !b.suffix) return -1;
     return a.suffix.localeCompare(b.suffix);
   }
-  function selectedUpdateRoute() {
-    const route = ui('update-route').value === 'github' ? 'github' : 'server';
-    return { id: route, name: route === 'github' ? 'GitHub' : '阿里云', url: UPDATE_ROUTES[route] };
+  function openAuthorizedUpdate() {
+    const url = installationDownloadUrl();
+    if (typeof GM_openInTab === 'function') GM_openInTab(url, { active: true });
+    else window.open(url, '_blank', 'noopener');
   }
   function checkScriptUpdate() {
-    const route = selectedUpdateRoute();
     return new Promise((resolve, reject) => {
-      if (typeof GM_xmlhttpRequest !== 'function') {
-        reject(new Error('当前脚本没有联网权限。请先更新到 0.4.0，让篡改猴授予新权限。'));
-        return;
-      }
+      if (typeof GM_xmlhttpRequest !== 'function') { reject(new Error('当前脚本没有联网权限，请核对篡改猴权限。')); return; }
       GM_xmlhttpRequest({
-        method: 'GET',
-        url: route.url + '?t=' + Date.now(),
-        timeout: 15000,
+        method: 'GET', url: RELEASE_METADATA_URL + '?t=' + Date.now(), timeout: 15000,
         onload: response => {
-          if (response.status !== 200) {
-            reject(new Error(route.name + ' 检查失败，HTTP ' + response.status + '。'));
-            return;
-          }
-          const match = String(response.responseText || '').match(/^\/\/\s*@version\s+(\S+)/m);
-          if (!match) {
-            reject(new Error(route.name + ' 上的脚本没有版本号。'));
-            return;
-          }
-          const remote = match[1];
-          const diff = compareVersions(remote, SCRIPT_VERSION);
-          if (diff > 0) {
-            if (typeof GM_openInTab === 'function') GM_openInTab(route.url, { active: true });
-            else window.open(route.url, '_blank', 'noopener');
-            resolve(route.name + ' 有新版本 ' + remote + '，已打开更新页。在篡改猴里点更新；如果显示重新安装，先取消。');
-            return;
-          }
-          resolve(diff === 0 ? route.name + ' 已是最新版本 ' + SCRIPT_VERSION + '。' : '本地版本 ' + SCRIPT_VERSION + ' 比' + route.name + '的 ' + remote + ' 新。');
+          if (response.status !== 200) { reject(new Error('官网版本检查失败，HTTP ' + response.status + '。')); return; }
+          try {
+            const remote = parseReleaseMetadata(response.responseText).version;
+            const diff = compareVersions(remote, SCRIPT_VERSION);
+            if (diff > 0) {
+              openAuthorizedUpdate();
+              resolve('发现新版本 ' + remote + '，已打开更新入口。首次官网下载需验证码；已授权安装可继续更新。');
+            } else resolve(diff === 0 ? '当前已是最新版本 ' + SCRIPT_VERSION + '。' : '本地版本 ' + SCRIPT_VERSION + ' 比官网的 ' + remote + ' 新。');
+          } catch (error) { reject(error); }
         },
-        onerror: () => reject(new Error('连不上' + route.name + '，请检查网络或换一条线路。')),
-        ontimeout: () => reject(new Error(route.name + ' 检查更新超时。'))
+        onerror: () => reject(new Error('连不上官网版本接口，请检查网络。')),
+        ontimeout: () => reject(new Error('检查更新超时。'))
       });
     });
   }
-  // 后台自查只读阿里云版本；失败静默，避免影响练习和定时提交。
+  // 版本号公开；不为检查新版下载完整软件，也不夹带安装凭据。
   const AUTO_UPDATE_INTERVAL = 5 * 60 * 1000;
   let lastAutoUpdateCheck = 0, autoUpdateChecking = false, autoUpdateVersion = '';
-  ui('update-now').onclick = () => {
-    if (!autoUpdateVersion) return;
-    if (typeof GM_openInTab === 'function') GM_openInTab(UPDATE_ROUTES.server, { active: true });
-    else window.open(UPDATE_ROUTES.server, '_blank', 'noopener');
-  };
+  ui('update-now').onclick = () => { if (autoUpdateVersion) openAuthorizedUpdate(); };
   ui('update-later').onclick = () => {
     ui('update-banner').hidden = true;
     try { sessionStorage.setItem('ucampus-update-dismissed/v1', autoUpdateVersion); } catch {}
@@ -3047,37 +3038,27 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     if (document.hidden || autoUpdateChecking || Date.now() - lastAutoUpdateCheck < AUTO_UPDATE_INTERVAL || typeof GM_xmlhttpRequest !== 'function') return;
     lastAutoUpdateCheck = Date.now(); autoUpdateChecking = true;
     try { GM_xmlhttpRequest({
-      method: 'GET', url: UPDATE_ROUTES.server + '?check=' + lastAutoUpdateCheck,
-      headers: { Range: 'bytes=0-511' }, timeout: 8000,
+      method: 'GET', url: RELEASE_METADATA_URL + '?t=' + lastAutoUpdateCheck, timeout: 8000,
       onload: response => {
         autoUpdateChecking = false;
-        if (response.status !== 200 && response.status !== 206) return;
-        const match = String(response.responseText || '').match(/^\/\/\s*@version\s+(\d+(?:\.\d+){1,3})\s*$/m);
-        if (!match || compareVersions(match[1], SCRIPT_VERSION) <= 0) { ui('update-banner').hidden = true; return; }
-        autoUpdateVersion = match[1];
+        if (response.status !== 200) return;
+        let remote;
+        try { remote = parseReleaseMetadata(response.responseText).version; } catch { return; }
+        if (compareVersions(remote, SCRIPT_VERSION) <= 0) { ui('update-banner').hidden = true; return; }
+        autoUpdateVersion = remote;
         let dismissed = '';
         try { dismissed = sessionStorage.getItem('ucampus-update-dismissed/v1') || ''; } catch {}
-        if (dismissed !== autoUpdateVersion) {
-          ui('update-title').textContent = '发现新版本 v' + autoUpdateVersion;
-          ui('update-banner').hidden = false;
-        }
+        if (dismissed !== remote) { ui('update-title').textContent = '发现新版本 v' + remote; ui('update-banner').hidden = false; }
       },
-      onerror: () => { autoUpdateChecking = false; },
-      ontimeout: () => { autoUpdateChecking = false; }
+      onerror: () => { autoUpdateChecking = false; }, ontimeout: () => { autoUpdateChecking = false; }
     }); } catch { autoUpdateChecking = false; }
   }
   setTimeout(checkUpdateInBackground, 1500);
   setInterval(checkUpdateInBackground, AUTO_UPDATE_INTERVAL);
   window.addEventListener('focus', checkUpdateInBackground);
   document.addEventListener('visibilitychange', checkUpdateInBackground);
-  try {
-    const savedRoute = localStorage.getItem(UPDATE_ROUTE_KEY);
-    if (savedRoute === 'github' || savedRoute === 'server') ui('update-route').value = savedRoute;
-  } catch { /* 线路记不住时用阿里云 */ }
-  ui('update-route').onchange = () => { try { localStorage.setItem(UPDATE_ROUTE_KEY, selectedUpdateRoute().id); } catch { /* 不影响本次检查 */ } };
   ui('check-update').onclick = run(async () => {
-    status('正在检查' + selectedUpdateRoute().name + '上的脚本版本……');
-    status(await checkScriptUpdate());
+    status('正在检查官网版本号……'); status(await checkScriptUpdate());
   }, { alertOnError: true, actionName: '检查更新' });
   ui('show-timer').onclick = () => {
     setTimerCollapsed(false);
