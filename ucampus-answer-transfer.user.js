@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         U校园 · 我的答案搬运助手
 // @namespace    local.ucampus.answer-transfer
-// @version      0.4.16
+// @version      0.4.17
 // @description  按本人整理的答案填写当前练习，并点击页面上的提交节点。只填已给出的答案。
 // @match        https://uai.unipus.cn/*
 // @match        https://ucontent.unipus.cn/*
@@ -20,7 +20,7 @@
 
 (() => {
   'use strict';
-  const SCRIPT_VERSION = '0.4.16';
+  const SCRIPT_VERSION = '0.4.17';
   const RELEASE_METADATA_URL = 'https://dl.keon5223.xyz/api/version/ucampus';
   const DOWNLOAD_PORTAL_URL = 'https://dl.keon5223.xyz/download?software=ucampus';
   // 由官网下载服务为每次授权安装替换；公开仓库只含占位符，不含真实凭据。
@@ -1844,7 +1844,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 :host{--accent:#8d3048;--line:#eadce0;--muted:#917982;color:#473640}section{background:#fcf6f4;border-color:#e7cbd0;box-shadow:0 20px 65px #49202d28,0 3px 12px #49202d12}header{background:linear-gradient(105deg,#fff9f6 0%,#f8e8e9 72%,#efd5d6 100%);border-bottom:1px solid #e7cbd0}.brand-mark{position:relative;background:linear-gradient(140deg,#7d253d,#aa4351);box-shadow:0 5px 12px #70243d40;color:#ffe9bd}.brand-mark::after{content:'✿';position:absolute;right:-6px;top:-8px;color:#d9a160;font-size:16px;text-shadow:0 1px 2px #fff}.brand-copy strong{color:#643044}.brand-copy span,.caption{color:#9b6975}.current-banner{background:#fff9f6;border-color:#ead6d7}#current-task,#timer-summary{background:#faeceb;color:#79384d}.card{border-color:#eedfe0;background:#fffcfa}.card-heading strong{color:#76394d}.task-row.current{border-color:#af6875;background:#faeeed;color:#7c3448;box-shadow:inset 3px 0 #9a4257}.dot.current{background:#9a4257}.timer-link{background:#faedec;color:#833d50;border-color:#e9cbcf}.timer-mark{background:#f7e6e4;color:#92445b}#submit-course,#auto-start{background:#8d3048;border-color:#8d3048;box-shadow:0 4px 10px #8d304830}#submit-course:hover:not(:disabled),#auto-start:hover:not(:disabled){background:#75253d;border-color:#75253d}#fill-course{color:#833e52;background:#fff5f3;border-color:#efd6da}.timer-stat strong,#timer-phase{color:#8d3048}#log-list{background:#fffaf8;color:#674e58;border-color:#eddce0}#log-export{color:#81394c;background:#fff5ee;border-color:#e8d1c7}button:focus-visible,summary:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline-color:#a0486266}.panel-foot::before{content:'✿  ';color:#b96b79}
 #update-banner{padding:10px 14px;background:#fff2dc;border-bottom:1px solid #e8c59a;color:#714634}#update-banner strong{display:block;font-size:12px}#update-banner p{margin:3px 0 7px;font-size:11px}#update-banner div{display:flex;gap:8px}#update-banner button{font-size:11px;padding:5px 10px}#update-now{background:#8d3048;color:#fff;border-color:#8d3048}
 .idle-confirm-option{display:flex;align-items:center;gap:8px;padding:9px 12px;margin-bottom:9px;background:#fffaf5;border:1px solid var(--line);border-radius:10px;cursor:pointer}.idle-confirm-option input{accent-color:#8d3048;width:15px;height:15px;flex-shrink:0}
-#account-banner{margin:0 0 8px;padding:8px 11px;border:1px solid #ead2d5;border-radius:9px;background:#fff8f6;color:#783b4e;font-size:12px;font-weight:650;overflow-wrap:anywhere}.account-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}.account-actions button{font-size:10px;padding:6px 9px;color:#804151;background:#fff7f5}.jump-check-actions{display:grid;grid-template-columns:1fr 1fr 70px;gap:6px;margin-top:9px}.jump-check-actions button{padding:8px 4px;font-size:11px}.jump-check-actions #jump-check-stop{color:#ad5263;background:#fff4f5}#jump-check-results{max-height:185px;overflow:auto;margin-top:9px;padding:8px 10px;background:#fff8f5;border:1px solid #eedfe0;border-radius:9px;font-size:11px;line-height:1.7}#jump-check-results:empty{display:none}#submit-top{background:#8d3048;color:#fff;border-color:#8d3048;padding:7px 8px;font-size:10px;white-space:nowrap}.task-line{display:flex;align-items:stretch;gap:3px;margin:4px}.task-line .task-row{flex:1;width:auto;margin:0}.task-manual{flex:0 0 71px;font-size:10px;padding:5px 4px;white-space:normal}.task-row.unreachable:not(.current){background:#eaf5ff;border-color:#b8dafa;color:#28628f}.task-row.unreachable.current{box-shadow:inset 3px 0 #4388c2}.dot.unreachable{background:#b8dafa}
+#account-banner{margin:0 0 8px;padding:8px 11px;border:1px solid #ead2d5;border-radius:9px;background:#fff8f6;color:#783b4e;font-size:12px;font-weight:650;overflow-wrap:anywhere}.account-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}.account-actions button{font-size:10px;padding:6px 9px;color:#804151;background:#fff7f5}.jump-check-actions{display:grid;grid-template-columns:1fr 1fr 70px;gap:6px;margin-top:9px}.jump-check-actions button{padding:8px 4px;font-size:11px}.jump-check-actions #jump-check-stop{color:#ad5263;background:#fff4f5}#jump-check-results{max-height:185px;overflow:auto;margin-top:9px;padding:8px 10px;background:#fff8f5;border:1px solid #eedfe0;border-radius:9px;font-size:11px;line-height:1.7}#jump-check-results:empty{display:none}#submit-top{background:#8d3048;color:#fff;border-color:#8d3048;padding:7px 8px;font-size:10px;white-space:nowrap}.task-line{display:flex;align-items:stretch;gap:3px;margin:4px}.task-line .task-row{flex:1;width:auto;margin:0}.task-manual{flex:0 0 71px;font-size:10px;padding:5px 4px;white-space:normal}.task-row.unreachable:not(.current){background:#f6ebff;border-color:#ddc2f3;color:#6a3d86}.task-row.unreachable.current{box-shadow:inset 3px 0 #8d4db8}.dot.unreachable{background:#c49ae0}
 #submit-protection{position:fixed;width:240px;max-width:calc(100vw - 24px);padding:14px;background:#fff4e5;border:1px solid #d59a60;border-radius:14px;box-shadow:0 6px 24px #49202d33;z-index:2147483647;color:#79384d}#submit-protection strong{font-size:14px}#submit-protection-clock{display:block;font-size:30px;font-variant-numeric:tabular-nums;color:#8d3048}#submit-protection p{font-size:11px;margin:5px 0}#submit-protection[hidden]{display:none}
 </style>
 <aside id="submit-protection" hidden role="status" aria-label="提交保护倒计时"><strong>提交过快 · 休息一会</strong><b id="submit-protection-clock">08:00</b><p>提交过于快了，休息会再提交。</p><p>再次出现网页频繁操作提示时，重新计时8分钟。定时任务已停止，不会自动续跑。</p></aside>
@@ -1860,7 +1860,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
 <small id="data-note"></small><small id="account-note">账号识别中；提交标记暂不显示。</small><div class="account-actions"><button id="refresh-account" type="button">重新核对账号</button><button id="bind-account" type="button" hidden>绑定学校和学号</button><button id="claim-legacy" type="button" disabled>认领旧版提交记录</button></div><small>旧版标绿需认领；「同步跨页面记录」只同步数据，不会自动指定账号。</small><small id="books-note">仅显示当前账号首页实际读到的教材；有内置答案不代表账号拥有该书。无答案的教材显示（0/0）。</small>
 <div id="task-tree" aria-label="按教材和单元分类的练习目录"></div>
 <div class="legend"><span><i class="dot pending"></i>有答案 · 未交</span><span><i class="dot done"></i>已提交</span><span><i class="dot current"></i>当前题</span><span><i class="dot unreachable"></i>跳转未找到</span></div>
-<small>单元进度为（已做/已收录）。蓝底是跨账号共享的跳转失败题；列表右侧按钮只改当前账号的本地提交标记，不会向网站提交。</small>
+<small>单元进度为（已做/已收录）。紫底是跨账号共享的跳转失败题；列表右侧按钮只改当前账号的本地提交标记，不会向网站提交。</small>
 <div class="jump-check-actions"><button id="jump-check-unit">检查当前单元</button><button id="jump-check-book">检查整本教材</button><button id="jump-check-stop" disabled>停止</button></div>
 <small>整本教材只完整检查一次，结果跨账号共享；仅显示未找到的练习。检查期间请保持课本页打开。</small><pre id="jump-check-results" role="status" aria-live="polite"></pre>
 </div>
@@ -2080,21 +2080,105 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     catch (error) { idleConfirmInput.checked = !idleConfirmInput.checked; status('自动确认设置未保存：' + error.message); }
   };
   const confirmedIdleButtons = new WeakSet();
+  const IDLE_SENTENCE = '由于你长时间未操作，请点确定继续使用。';
+  function idleDocs() {
+    const docs = [], seen = new Set();
+    const add = doc => {
+      if (!doc || seen.has(doc)) return;
+      seen.add(doc);
+      docs.push(doc);
+      let frames = [];
+      try { frames = [...doc.querySelectorAll('iframe,frame')]; } catch { return; }
+      for (const frame of frames) {
+        try { if (frame.contentDocument) add(frame.contentDocument); } catch { /* 跨域框架读不到 */ }
+      }
+    };
+    add(document);
+    let win = window;
+    for (let depth = 0; depth < 6 && win.parent && win.parent !== win; depth += 1) {
+      win = win.parent;
+      try { add(win.document); } catch { break; }
+    }
+    return docs;
+  }
+  function idleRoots(doc) {
+    const roots = [];
+    const visit = root => {
+      if (!root || roots.includes(root)) return;
+      roots.push(root);
+      let nodes = [];
+      try { nodes = root.querySelectorAll('*'); } catch { return; }
+      for (const element of nodes) if (element.shadowRoot) visit(element.shadowRoot);
+    };
+    try { visit(doc); } catch { /* 这一层读不到 */ }
+    return roots;
+  }
+  function nextIdleBox(box) {
+    if (!box) return null;
+    if (box.parentElement) return box.parentElement;
+    const root = box.getRootNode?.();
+    return root && root.host && root.host !== box ? root.host : null;
+  }
+  function isOwnIdleNode(node) {
+    if (!host || !node) return false;
+    if (node === host || host.contains?.(node)) return true;
+    const root = node.getRootNode?.();
+    return !!(root && (root === host.shadowRoot || root.host === host));
+  }
+  function idleSentenceNear(button) {
+    const doc = button.ownerDocument;
+    let box = button;
+    for (let depth = 0; box && depth < 8 && box !== doc?.body && box !== doc?.documentElement; depth += 1, box = nextIdleBox(box)) {
+      let text = '';
+      try { text = normalize(box.textContent); } catch { continue; }
+      if (text.includes(IDLE_SENTENCE)) return true;
+    }
+    return false;
+  }
+  function idleButtons(doc) {
+    const found = [];
+    const add = button => { if (button && !isOwnIdleNode(button) && !found.includes(button)) found.push(button); };
+    for (const root of idleRoots(doc)) {
+      if (isOwnIdleNode(root) || isOwnIdleNode(root.host)) continue;
+      let marked = [];
+      try { marked = [...root.querySelectorAll('[id^="mask_notice_id_"]')]; } catch { marked = []; }
+      for (const button of marked) {
+        if (/^mask_notice_id_\d{13}$/.test(button.id || '') && normalize(button.textContent) === '确定') add(button);
+      }
+      let walker;
+      try { walker = doc.createTreeWalker(root.nodeType === 9 ? (root.body || root) : root, NodeFilter.SHOW_TEXT); } catch { continue; }
+      let node;
+      while ((node = walker.nextNode())) {
+        if (isOwnIdleNode(node) || !normalize(node.textContent).includes('长时间未操作')) continue;
+        let box = node.parentElement;
+        for (let depth = 0; box && depth < 8 && box !== doc.body && box !== doc.documentElement; depth += 1, box = nextIdleBox(box)) {
+          let controls = [];
+          try { controls = [...box.querySelectorAll('button,a,div,span,[role="button"]')]; } catch { continue; }
+          const button = controls.find(item => !isOwnIdleNode(item) && normalize(item.textContent) === '确定');
+          if (button) { add(button); break; }
+        }
+      }
+    }
+    return found;
+  }
   function confirmIdleNotice() {
     if (!idleConfirmInput.checked && !autoState?.running) return;
     if (protectionActive()) return;
-    for (const button of document.querySelectorAll('button[id^="mask_notice_id_"]')) {
-      if (!/^mask_notice_id_\d{13}$/.test(button.id) || confirmedIdleButtons.has(button) || button.disabled ||
-          normalize(button.textContent) !== '确定' || !button.getClientRects().length ||
-          getComputedStyle(button).visibility === 'hidden') continue;
-      const notice = normalize(button.parentElement?.textContent);
-      if (!notice.includes('由于你长时间未操作，请点确定继续使用。')) continue;
-      confirmedIdleButtons.add(button);
-      button.click();
-      appendActivityLog('已自动确认网页的长时间未操作提示。');
-      if (autoState?.running && !autoState.cancelled && autoState.currentTask && ['jumping', 'filling', 'waiting', 'perturbing'].includes(autoState.phase)) {
-        autoState.idleSubmitTaskKey = taskKey(autoState.currentTask.path, autoState.currentTask.book);
-        appendActivityLog(autoState.phase === 'perturbing' ? '定时任务在随机扰动期间收到闲置提示，结束这一题的扰动并提交；下一题重新抽。' : '定时任务收到闲置提示，当前题填写并核对后提前提交；没用完的分配时间退回后续题目。');
+    let docs = [document];
+    try { docs = idleDocs(); } catch { /* 只查当前页 */ }
+    for (const doc of docs) {
+      let buttons = [];
+      try { buttons = idleButtons(doc); } catch { continue; }
+      for (const button of buttons) {
+        if (confirmedIdleButtons.has(button) || button.disabled || !idleSentenceNear(button)) continue;
+        confirmedIdleButtons.add(button);
+        try { button.click(); } catch { confirmedIdleButtons.delete(button); continue; }
+        const now = new Date();
+        appendActivityLog('已自动确认网页的长时间未操作提示 ' + now.toLocaleTimeString('zh-CN', { hour12: false }) + '.' + String(now.getMilliseconds()).padStart(3, '0'));
+        if (autoState?.running && !autoState.cancelled && autoState.currentTask && ['jumping', 'filling', 'waiting', 'perturbing'].includes(autoState.phase)) {
+          autoState.idleSubmitTaskKey = taskKey(autoState.currentTask.path, autoState.currentTask.book);
+          appendActivityLog(autoState.phase === 'perturbing' ? '定时任务在随机扰动期间收到闲置提示，结束这一题的扰动并提交；下一题重新抽。' : '定时任务收到闲置提示，当前题填写并核对后提前提交；没用完的分配时间退回后续题目。');
+        }
       }
     }
   }
@@ -2102,14 +2186,14 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     let idleScanTimer;
     const scheduleIdleScan = () => {
       if (idleScanTimer) return;
-      idleScanTimer = setTimeout(() => { idleScanTimer = null; scanRateNotices(); confirmIdleNotice(); }, 150);
+      idleScanTimer = setTimeout(() => { idleScanTimer = null; try { scanRateNotices(); } catch { /* 不影响闲置检测 */ } confirmIdleNotice(); }, 150);
     };
     new MutationObserver(scheduleIdleScan).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
     idleConfirmInput.addEventListener('change', scheduleIdleScan);
   }
   // 等界面及定时状态初始化后扫描，避免初始化期间读取未建立的状态。
-  setTimeout(() => { refreshProtectionWindow(scanRateNotices()); confirmIdleNotice(); }, 0);
-  setInterval(() => { refreshProtectionWindow(scanRateNotices()); }, 1000);
+  setTimeout(() => { try { refreshProtectionWindow(scanRateNotices()); } catch { /* 频繁提示失败不影响闲置检测 */ } confirmIdleNotice(); }, 0);
+  setInterval(() => { try { refreshProtectionWindow(scanRateNotices()); } catch { /* 频繁提示失败不影响闲置检测 */ } confirmIdleNotice(); }, 500);
   const ROUTE_KEY = 'ucampus-learned-routes/v1';
   let taskTreeSignature = '';
   let lastTreeFocus = '';
@@ -3456,7 +3540,7 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   async function checkTaskJumps(scope) {
     if (!catalogMenus().length || isShelfPage()) throw new Error('请先打开具体教材的课本播放器，再检查跳转。');
     const book = activeBook();
-    if (scope === 'book' && navigationBookRecord(book).checkedAt) throw new Error('这本教材已经完整检查过一次；失败题已在目录中标为浅蓝色。当前单元仍可检查。');
+    if (scope === 'book' && navigationBookRecord(book).checkedAt) throw new Error('这本教材已经完整检查过一次；失败题已在目录中标为浅紫色。当前单元仍可检查。');
     const unit = scope === 'unit' ? pageCurrentUnit() : 0;
     if (scope === 'unit' && !unit) throw new Error('无法唯一识别当前单元，请在课本目录打开该单元的一道练习后重试。');
     const tasks = COURSE_TASKS.filter(task => taskBook(task) === book && (scope === 'book' || (isUnitToken(task.path[0]) ? Number(unitNumberFrom(task.path[0])) : 1) === unit));
