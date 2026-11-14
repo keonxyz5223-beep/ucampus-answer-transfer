@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         U校园 · 我的答案搬运助手
 // @namespace    local.ucampus.answer-transfer
-// @version      0.4.17
+// @version      0.4.18
 // @description  按本人整理的答案填写当前练习，并点击页面上的提交节点。只填已给出的答案。
 // @match        https://uai.unipus.cn/*
 // @match        https://ucontent.unipus.cn/*
@@ -20,7 +20,7 @@
 
 (() => {
   'use strict';
-  const SCRIPT_VERSION = '0.4.17';
+  const SCRIPT_VERSION = '0.4.18';
   const RELEASE_METADATA_URL = 'https://dl.keon5223.xyz/api/version/ucampus';
   const DOWNLOAD_PORTAL_URL = 'https://dl.keon5223.xyz/download?software=ucampus';
   // 由官网下载服务为每次授权安装替换；公开仓库只含占位符，不含真实凭据。
@@ -2882,6 +2882,10 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
   function taskRoute(task) {
     return navigationPath(readTaskRoutes()[taskKey(task.path, task.book)] || task.path);
   }
+  function savedTaskRoute(task) {
+    const route = task && readTaskRoutes()[taskKey(task.path, task.book)];
+    return Array.isArray(route) ? route : null;
+  }
   function knownTaskHits(labels, book = activeBook(), routes = readTaskRoutes()) {
     return COURSE_TASKS.filter(task => taskBook(task) === book && suggestTasks([{ ...task, path: routes[taskKey(task.path, task.book)] || task.path }], labels).length === 1);
   }
@@ -3898,8 +3902,9 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     if (await requireAccountIdentity() !== accountKey) throw new Error('账号已切换，停止提交。');
     status(filled + "\n正在提交……");
     const submitted = await clickSubmit(message => status(filled + "\n" + message));
-    const remembered = accountIdentity?.key === accountKey && rememberSubmitted(task);
-    status(`${filled}\n${submitted}${remembered ? '\n这道题已记住，目录里标成绿色。' : '\n提交了，但这台浏览器没有记住。'}`);
+    const pageSaved = !!savedTaskRoute(task);
+    const remembered = pageSaved && accountIdentity?.key === accountKey && rememberSubmitted(task);
+    status(`${filled}\n${submitted}${remembered ? '\n这道题已记住，目录里标成绿色。' : pageSaved ? '\n提交了，但这台浏览器没有记住。' : '\n已提交。没点过「记住当前页位置」，没有标绿，也没有记入已提交。'}`);
   }, { alertOnError: true, actionName: '填写并提交' });
   ui('submit-top').onclick = () => ui('submit-course').click();
   ui('submit-only').onclick = run(async () => {
@@ -3910,7 +3915,8 @@ textarea,select,input[type=number]{width:100%;font-family:inherit;font-size:12px
     const task = hits.length === 1 ? hits[0] : null;
     status('保留网页现有答案，正在提交……');
     const submitted = await clickSubmit(status);
-    const remembered = task && accountIdentity?.key === accountKey ? rememberSubmitted(task) : false;
-    status(submitted + (remembered ? '\n当前实际练习已标绿。' : task ? '\n提交已确认，但本浏览器未记住标记。' : '\n当前练习未唯一识别，没有更改任何题的标记。'));
+    const pageSaved = !!(task && savedTaskRoute(task));
+    const remembered = pageSaved && accountIdentity?.key === accountKey ? rememberSubmitted(task) : false;
+    status(submitted + (remembered ? '\n当前实际练习已标绿。' : pageSaved ? '\n提交已确认，但本浏览器未记住标记。' : task ? '\n已提交。没点过「记住当前页位置」，没有标绿，也没有记入已提交。' : '\n当前练习未唯一识别，没有更改任何题的标记。'));
   }, { alertOnError: true, actionName: '仅提交' });
 })();
